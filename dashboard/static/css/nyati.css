@@ -1,0 +1,365 @@
+/* nyati.css — Nyati Cement brand styles for Return Truck Allocator
+   Brand colors: Navy #173158 · Orange #F49545 · Green #239557
+   Typography: system-ui stack (Futura not web-available; closest match: system-ui bold)
+*/
+
+:root {
+  --navy:        #173158;
+  --navy-light:  #1e4080;
+  --orange:      #F49545;
+  --orange-dark: #d07a2a;
+  --green:       #239557;
+  --green-light: #2ab868;
+  --white:       #ffffff;
+  --off-white:   #f8f9fc;
+  --gray-100:    #f0f2f5;
+  --gray-200:    #e1e5ec;
+  --gray-400:    #9aa5b4;
+  --gray-700:    #3d4f61;
+  --gray-900:    #1a2332;
+
+  --radius:      6px;
+  --shadow:      0 2px 8px rgba(23,49,88,0.12);
+  --shadow-md:   0 4px 16px rgba(23,49,88,0.16);
+
+  --font:        'Segoe UI', system-ui, -apple-system, sans-serif;
+}
+
+/* ── Reset & base ─────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { font-size: 15px; }
+body {
+  font-family: var(--font);
+  background: var(--off-white);
+  color: var(--gray-900);
+  min-height: 100vh;
+}
+a { color: var(--navy); text-decoration: none; }
+a:hover { color: var(--orange); }
+
+/* ── Header / Topbar ──────────────────────────────────────────── */
+.topbar {
+  background: var(--navy);
+  color: var(--white);
+  padding: 0 1.5rem;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  box-shadow: var(--shadow);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+.topbar-logo {
+  font-size: 1.1rem;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  color: var(--white);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.topbar-logo span.accent { color: var(--orange); }
+.topbar-nav { display: flex; gap: 0.25rem; margin-left: 1.5rem; }
+.topbar-nav a {
+  color: rgba(255,255,255,0.75);
+  padding: 0.35rem 0.75rem;
+  border-radius: var(--radius);
+  font-size: 0.875rem;
+  transition: background 0.15s;
+}
+.topbar-nav a:hover,
+.topbar-nav a.active { background: rgba(255,255,255,0.12); color: var(--white); }
+.topbar-status {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+  color: rgba(255,255,255,0.6);
+}
+.live-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--green-light);
+  animation: pulse 2s infinite;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* ── Page layout ──────────────────────────────────────────────── */
+.page { max-width: 1280px; margin: 0 auto; padding: 1.5rem; }
+.page-header { margin-bottom: 1.5rem; }
+.page-title { font-size: 1.3rem; font-weight: 700; color: var(--navy); }
+.page-subtitle { color: var(--gray-400); font-size: 0.875rem; margin-top: 0.2rem; }
+
+/* ── KPI Cards ────────────────────────────────────────────────── */
+.kpi-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+.kpi-card {
+  background: var(--white);
+  border-radius: var(--radius);
+  padding: 1.25rem 1.5rem;
+  box-shadow: var(--shadow);
+  border-top: 3px solid var(--navy);
+}
+.kpi-card.orange { border-top-color: var(--orange); }
+.kpi-card.green  { border-top-color: var(--green); }
+.kpi-label { font-size: 0.75rem; font-weight: 600; text-transform: uppercase;
+             letter-spacing: 0.5px; color: var(--gray-400); margin-bottom: 0.4rem; }
+.kpi-value { font-size: 2rem; font-weight: 800; color: var(--navy); line-height: 1; }
+.kpi-value.orange { color: var(--orange-dark); }
+.kpi-value.green  { color: var(--green); }
+.kpi-sub { font-size: 0.75rem; color: var(--gray-400); margin-top: 0.3rem; }
+
+/* ── Card / Panel ─────────────────────────────────────────────── */
+.card {
+  background: var(--white);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.card-header {
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--gray-200);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.card-title { font-size: 0.925rem; font-weight: 700; color: var(--navy); }
+.card-body  { padding: 0; }
+
+/* ── Table ────────────────────────────────────────────────────── */
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+.data-table th {
+  padding: 0.6rem 1rem;
+  text-align: left;
+  background: var(--gray-100);
+  color: var(--navy);
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  border-bottom: 2px solid var(--gray-200);
+  white-space: nowrap;
+}
+.data-table td {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--gray-200);
+  vertical-align: middle;
+}
+.data-table tr:last-child td { border-bottom: none; }
+.data-table tr:hover td { background: var(--gray-100); }
+.data-table .mono { font-family: monospace; font-size: 0.85em; }
+
+/* ── Status badges ────────────────────────────────────────────── */
+.badge {
+  display: inline-block;
+  padding: 0.2em 0.65em;
+  border-radius: 99px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+.badge-expected    { background: var(--gray-200);  color: var(--gray-700); }
+.badge-pre         { background: #dbeafe;           color: #1d4ed8; }
+.badge-arrived     { background: #fef9c3;           color: #854d0e; }
+.badge-allocated   { background: #dcfce7;           color: #166534; }
+.badge-dispatched  { background: #f3e8ff;           color: #7e22ce; }
+.badge-proposed    { background: #fff7ed;           color: var(--orange-dark); }
+.badge-confirmed   { background: #dcfce7;           color: #166534; }
+.badge-urgent      { background: #fee2e2;           color: #b91c1c; }
+.badge-near-ready  { background: #fef3c7;           color: #92400e; }
+
+/* ── Truck row with match info ────────────────────────────────── */
+.truck-row-match {
+  display: flex; flex-direction: column; gap: 2px;
+}
+.match-savings { font-weight: 700; color: var(--green); }
+.match-orders  { font-size: 0.78rem; color: var(--gray-400); }
+.match-pending { color: var(--orange-dark); font-size: 0.78rem; }
+
+/* ── Buttons ──────────────────────────────────────────────────── */
+.btn {
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  padding: 0.4rem 0.9rem;
+  border-radius: var(--radius);
+  font-size: 0.825rem;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  transition: opacity 0.15s, transform 0.1s;
+  text-decoration: none;
+}
+.btn:active { transform: scale(0.97); }
+.btn-primary  { background: var(--navy);   color: var(--white); }
+.btn-orange   { background: var(--orange); color: var(--white); }
+.btn-green    { background: var(--green);  color: var(--white); }
+.btn-outline  { background: transparent; border: 1.5px solid var(--navy); color: var(--navy); }
+.btn-sm       { padding: 0.25rem 0.65rem; font-size: 0.775rem; }
+.btn:hover    { opacity: 0.88; }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* ── Proposal variant cards ───────────────────────────────────── */
+.proposals-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+.proposal-card {
+  background: var(--white);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  border: 2px solid transparent;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  overflow: hidden;
+}
+.proposal-card:hover { border-color: var(--navy); box-shadow: var(--shadow-md); }
+.proposal-card.selected { border-color: var(--green); }
+.proposal-card-header {
+  padding: 0.9rem 1.1rem;
+  background: var(--navy);
+  color: var(--white);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.proposal-card-header.max-savings { background: var(--green); }
+.proposal-card-header.max-load    { background: var(--navy); }
+.proposal-card-header.urgent      { background: #b91c1c; }
+.proposal-card-body { padding: 1rem 1.1rem; }
+.proposal-metric {
+  display: flex; justify-content: space-between;
+  margin-bottom: 0.5rem; font-size: 0.875rem;
+}
+.proposal-metric .label { color: var(--gray-400); }
+.proposal-metric .value { font-weight: 700; }
+.proposal-savings { font-size: 1.4rem; font-weight: 800; color: var(--green); }
+.proposal-stops { font-size: 0.8rem; color: var(--gray-400); margin-top: 0.25rem; }
+
+/* ── AI reasoning panel ───────────────────────────────────────── */
+.ai-panel {
+  background: #f0f4ff;
+  border-left: 4px solid var(--navy);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  padding: 1rem 1.25rem;
+  margin-top: 1rem;
+  font-size: 0.875rem;
+  line-height: 1.6;
+}
+.ai-panel-title {
+  font-size: 0.75rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.4px; color: var(--navy); margin-bottom: 0.5rem;
+  display: flex; align-items: center; gap: 0.4rem;
+}
+.ai-recommendation {
+  display: inline-block;
+  padding: 0.2em 0.7em;
+  border-radius: 99px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  margin-top: 0.5rem;
+}
+.ai-recommend-confirm { background: #dcfce7; color: #166534; }
+.ai-recommend-review  { background: #fff7ed; color: var(--orange-dark); }
+.ai-recommend-hold    { background: #fee2e2; color: #b91c1c; }
+
+/* ── Warning banners ──────────────────────────────────────────── */
+.warning-banner {
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  border-radius: var(--radius);
+  padding: 0.75rem 1rem;
+  font-size: 0.85rem;
+  color: #92400e;
+  margin-bottom: 1rem;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+/* ── Loading spinner ──────────────────────────────────────────── */
+.spinner {
+  display: inline-block;
+  width: 16px; height: 16px;
+  border: 2px solid var(--gray-200);
+  border-top-color: var(--navy);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Empty state ──────────────────────────────────────────────── */
+.empty-state {
+  text-align: center;
+  padding: 3rem 1rem;
+  color: var(--gray-400);
+}
+.empty-state-icon { font-size: 3rem; margin-bottom: 0.75rem; }
+.empty-state-title { font-weight: 700; color: var(--gray-700); margin-bottom: 0.4rem; }
+
+/* ── Notification toast ───────────────────────────────────────── */
+#toast-container {
+  position: fixed;
+  bottom: 1.5rem;
+  right: 1.5rem;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.toast {
+  background: var(--navy);
+  color: var(--white);
+  padding: 0.75rem 1.25rem;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-md);
+  font-size: 0.875rem;
+  animation: slideIn 0.25s ease;
+  max-width: 340px;
+}
+.toast.green { background: var(--green); }
+.toast.orange { background: var(--orange-dark); }
+@keyframes slideIn {
+  from { transform: translateX(120%); opacity: 0; }
+  to   { transform: translateX(0);    opacity: 1; }
+}
+
+/* ── Allocated trucks section (collapsed) ─────────────────────── */
+.allocated-section {
+  margin-top: 1.5rem;
+  border-top: 2px dashed var(--gray-200);
+  padding-top: 1rem;
+}
+.allocated-section summary {
+  cursor: pointer;
+  font-size: 0.8rem;
+  color: var(--gray-400);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  padding: 0.25rem 0;
+  user-select: none;
+}
+.allocated-section summary:hover { color: var(--navy); }
+
+/* ── Responsive ───────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .kpi-row { grid-template-columns: repeat(2, 1fr); }
+  .proposals-grid { grid-template-columns: 1fr; }
+  .data-table { font-size: 0.8rem; }
+  .data-table th, .data-table td { padding: 0.5rem 0.65rem; }
+}

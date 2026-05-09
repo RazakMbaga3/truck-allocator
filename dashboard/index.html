@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Truck Allocator — Nyati Cement</title>
+  <link rel="stylesheet" href="/static/css/nyati.css" />
+  <style>
+    .data-table th, .data-table td { white-space: nowrap; }
+    .mono { font-family: monospace; font-size: 0.85rem; }
+    .pill { display:inline-block; padding:2px 8px; border-radius:999px; font-size:0.75rem; font-weight:600; }
+    .pill-expected  { background:#e8f4fd; color:#1a6fa8; }
+    .pill-arrived   { background:#e6f9ef; color:#1a7a40; }
+    .pill-confirmed { background:#173158; color:#fff; }
+    .pill-dispatched{ background:#F49545; color:#fff; }
+    .kpi-row { display:flex; gap:1rem; margin-bottom:1.5rem; flex-wrap:wrap; }
+    .kpi-card { flex:1; min-width:140px; background:#fff; border:1px solid #e5e7eb;
+                border-radius:8px; padding:1rem 1.25rem; }
+    .kpi-label { font-size:0.75rem; color:#6b7280; margin-bottom:0.25rem; }
+    .kpi-value { font-size:1.75rem; font-weight:700; color:#173158; }
+    .kpi-value.orange { color:#F49545; }
+    .kpi-value.green  { color:#239557; }
+    .kpi-sub   { font-size:0.7rem; color:#9ca3af; }
+    .empty-state { text-align:center; padding:3rem; color:#9ca3af; }
+    .empty-state-icon { font-size:3rem; margin-bottom:0.5rem; }
+    .empty-state-title { font-size:1.1rem; font-weight:600; margin-bottom:0.25rem; color:#6b7280; }
+    .route-badge { background:#f3f4f6; color:#374151; padding:2px 7px;
+                   border-radius:4px; font-size:0.75rem; }
+    .na { color:#d1d5db; }
+  </style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-logo">
+    <span>TRUCK</span>&nbsp;<span class="accent">ALLOCATOR</span>
+  </div>
+  <nav class="topbar-nav">
+    <a href="/" class="active">Schedule</a>
+    <a href="/proposals">Proposals</a>
+    <a href="/confirmed">Confirmed</a>
+  </nav>
+  <div class="topbar-status">
+    <div class="live-dot"></div>
+    <span id="sse-status">Connecting…</span>
+    <span id="last-sync" style="margin-left:0.75rem">—</span>
+  </div>
+</header>
+
+<main class="page">
+  <div class="page-header">
+    <div class="page-title">Inbound Truck Schedule</div>
+    <div class="page-subtitle">Expected return trucks from raw material deliveries — Kimbiji Plant</div>
+  </div>
+
+  <!-- KPI row -->
+  <div class="kpi-row">
+    <div class="kpi-card">
+      <div class="kpi-label">Expected Trucks (7 days)</div>
+      <div class="kpi-value" id="kpi-trucks">—</div>
+      <div class="kpi-sub">awaiting allocation</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Unallocated Orders</div>
+      <div class="kpi-value orange" id="kpi-orders">—</div>
+      <div class="kpi-sub">ready for loading</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Avg Utilization</div>
+      <div class="kpi-value green" id="kpi-util">—</div>
+      <div class="kpi-sub">matched trucks</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Matched This Month</div>
+      <div class="kpi-value" id="kpi-matched">—</div>
+      <div class="kpi-sub" id="kpi-month">—</div>
+    </div>
+  </div>
+
+  <!-- Available trucks -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">Inbound Trucks</span>
+      <div style="display:flex;gap:0.5rem;align-items:center">
+        <button class="btn btn-outline btn-sm" onclick="syncNow()">⟳ Sync Odoo</button>
+        <button class="btn btn-primary btn-sm" onclick="loadSchedules()">Refresh</button>
+      </div>
+    </div>
+    <div class="card-body" style="overflow-x:auto">
+      <div id="loading" style="padding:2rem;text-align:center"><div class="spinner"></div></div>
+      <table class="data-table" id="main-table" style="display:none;width:100%">
+        <thead>
+          <tr>
+            <th>ETA</th>
+            <th>Transporter</th>
+            <th>Driver Name</th>
+            <th>License No.</th>
+            <th>Dealer No.</th>
+            <th>Truck No.</th>
+            <th>Origin</th>
+            <th>Material</th>
+            <th>Route</th>
+            <th>Status</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody id="main-tbody"></tbody>
+      </table>
+      <div id="main-empty" class="empty-state" style="display:none">
+        <div class="empty-state-icon">🚛</div>
+        <div class="empty-state-title">No trucks scheduled</div>
+        <div>All inbound trucks have been allocated, or no POs confirmed yet.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Allocated / dispatched (collapsed) -->
+  <div class="allocated-section" style="margin-top:1rem">
+    <details>
+      <summary id="allocated-summary" style="cursor:pointer;font-weight:600;color:#173158;padding:0.5rem 0">
+        ▸ Allocated / Dispatched Trucks (0)
+      </summary>
+      <div style="margin-top:0.75rem;overflow-x:auto">
+        <table class="data-table" id="allocated-table" style="width:100%">
+          <thead>
+            <tr>
+              <th>ETA</th>
+              <th>Transporter</th>
+              <th>Driver Name</th>
+              <th>License No.</th>
+              <th>Dealer No.</th>
+              <th>Truck No.</th>
+              <th>Origin</th>
+              <th>Material</th>
+              <th>Route</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="allocated-tbody"></tbody>
+        </table>
+      </div>
+    </details>
+  </div>
+</main>
+
+<div id="toast-container"></div>
+
+<script src="/static/js/api.js"></script>
+<script src="/static/js/schedule-feed.js"></script>
+<script>
+// ── Init ───────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  loadKPIs();
+  loadSchedules();
+  const feed = new ScheduleFeed(handleSSEEvent);
+  feed.connect();
+  setInterval(loadKPIs, 60_000);
+});
+
+// ── KPIs ───────────────────────────────────────────────────────────────────
+async function loadKPIs() {
+  try {
+    const s = await API.summary();
+    document.getElementById('kpi-trucks').textContent   = s.trucks_expected_next_7d ?? '—';
+    document.getElementById('kpi-orders').textContent   = s.unallocated_orders_count ?? '—';
+    document.getElementById('kpi-util').textContent     = s.avg_utilization_pct != null
+      ? s.avg_utilization_pct.toFixed(0) + '%' : '—';
+    document.getElementById('kpi-matched').textContent  = s.confirmed_proposals_mtd ?? '—';
+    document.getElementById('kpi-month').textContent    = s.month_key ?? '—';
+  } catch (e) {
+    console.warn('KPI load failed:', e);
+  }
+}
+
+// ── Schedules ──────────────────────────────────────────────────────────────
+async function loadSchedules() {
+  document.getElementById('loading').style.display    = 'block';
+  document.getElementById('main-table').style.display = 'none';
+  document.getElementById('main-empty').style.display = 'none';
+
+  try {
+    const all = await API.schedules('?status=all');
+
+    const available  = all.filter(s => s.is_available !== false &&
+      !['CONFIRMED','DISPATCHED','COMPLETED'].includes(s.allocation_status));
+    const allocated  = all.filter(s =>
+      ['CONFIRMED','DISPATCHED','COMPLETED'].includes(s.allocation_status) ||
+      s.status === 'DISPATCHED');
+
+    renderTable('main-tbody', 'main-table', 'main-empty', 'loading', available, true);
+    renderAllocated(allocated);
+
+    document.getElementById('last-sync').textContent =
+      'Synced ' + new Date().toLocaleTimeString('en-GB', {hour:'2-digit',minute:'2-digit'});
+  } catch (e) {
+    console.error('Schedule load failed:', e);
+    document.getElementById('loading').style.display = 'none';
+    showToast('Failed to load schedules: ' + e.message, 'orange');
+  }
+}
+
+// ── Render helpers ─────────────────────────────────────────────────────────
+function truckRow(s, showAction) {
+  const na = '<span class="na">—</span>';
+  const transporter = s.transporter_name || (s.transporter ? s.transporter.name : null) || na;
+  const driver      = s.driver_name      || na;
+  const license     = s.driver_license_no || na;
+  const dealer      = s.dealer_number    || na;
+  const plate       = s.truck_plate      ? `<span class="mono">${s.truck_plate}</span>` : na;
+  const origin      = s.origin_region    || na;
+  const material    = s.raw_material_type || na;
+  const route       = s.corridor_name
+    ? `<span class="route-badge">${s.corridor_name.replace('_',' ')}</span>` : na;
+  const eta         = s.expected_arrival_dt ? fmtDate(s.expected_arrival_dt) : na;
+  const status      = fmtStatus(s.status);
+  const action      = showAction
+    ? `<a href="/proposals?schedule=${s.id}" class="btn btn-primary btn-sm">Review</a>` : '';
+
+  return `<tr id="sched-row-${s.id}">
+    <td><strong>${eta}</strong></td>
+    <td>${transporter}</td>
+    <td>${driver}</td>
+    <td class="mono" style="font-size:0.8rem">${license}</td>
+    <td class="mono" style="font-size:0.8rem">${dealer}</td>
+    <td>${plate}</td>
+    <td><strong>${origin}</strong></td>
+    <td>${material}</td>
+    <td>${route}</td>
+    <td>${status}</td>
+    ${showAction ? `<td>${action}</td>` : ''}
+  </tr>`;
+}
+
+function renderTable(tbodyId, tableId, emptyId, loadingId, schedules, showAction) {
+  if (loadingId) document.getElementById(loadingId).style.display = 'none';
+
+  if (!schedules.length) {
+    document.getElementById(tableId).style.display = 'none';
+    document.getElementById(emptyId).style.display = 'block';
+    return;
+  }
+
+  document.getElementById(tableId).style.display = 'table';
+  document.getElementById(emptyId).style.display = 'none';
+  document.getElementById(tbodyId).innerHTML = schedules.map(s => truckRow(s, showAction)).join('');
+}
+
+function renderAllocated(schedules) {
+  const summary = document.getElementById('allocated-summary');
+  summary.textContent = `▸ Allocated / Dispatched Trucks (${schedules.length})`;
+  document.getElementById('allocated-tbody').innerHTML =
+    schedules.map(s => truckRow(s, false)).join('');
+}
+
+// ── SSE ────────────────────────────────────────────────────────────────────
+function handleSSEEvent(type, data) {
+  if (['truck_allocated','truck_arrived','proposals_updated','schedule_updated','truck_dispatched'].includes(type)) {
+    loadSchedules();
+    loadKPIs();
+    if (type === 'truck_allocated')
+      showToast(`Truck allocated: ${data.schedule_ref}`, 'green');
+    if (type === 'truck_dispatched')
+      showToast(`Dispatched: ${data.truck_plate || data.schedule_ref}`, 'green');
+  }
+}
+
+// ── Sync ───────────────────────────────────────────────────────────────────
+async function syncNow() {
+  showToast('Syncing with Odoo…');
+  try {
+    await API.syncOrders();
+    showToast('Sync complete', 'green');
+    loadSchedules();
+    loadKPIs();
+  } catch (e) {
+    showToast('Sync failed: ' + e.message, 'orange');
+  }
+}
+</script>
+</body>
+</html>
