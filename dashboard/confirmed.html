@@ -76,25 +76,27 @@
     <div class="card-header"><span class="card-title">Allocation Log</span></div>
     <div class="card-body" style="overflow-x:auto">
       <div id="loading" style="padding:2rem;text-align:center"><div class="spinner"></div></div>
-      <table class="data-table" id="log-table" style="display:none;width:100%">
-        <thead>
-          <tr>
-            <th>ETA</th>
-            <th>Transporter</th>
-            <th>Driver Name</th>
-            <th>License No.</th>
-            <th>Dealer No.</th>
-            <th>Truck No.</th>
-            <th>Origin</th>
-            <th>Material</th>
-            <th>Route</th>
-            <th>Util %</th>
-            <th>Stops</th>
-            <th>Status</th>
-          </tr>
-        </thead>
-        <tbody id="log-tbody"></tbody>
-      </table>
+      <div class="data-table-wrapper">
+        <table class="data-table" id="log-table" style="display:none;width:100%">
+          <thead>
+            <tr>
+              <th>ETA</th>
+              <th>Transporter</th>
+              <th>Driver Name</th>
+              <th>License No.</th>
+              <th>Dealer No.</th>
+              <th>Truck No.</th>
+              <th>Origin</th>
+              <th>Material</th>
+              <th>Route</th>
+              <th>Util %</th>
+              <th>Stops</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="log-tbody"></tbody>
+        </table>
+      </div>
       <div id="log-empty" class="empty-state" style="display:none">
         <div class="empty-state-icon">📋</div>
         <div class="empty-state-title">No confirmed allocations yet</div>

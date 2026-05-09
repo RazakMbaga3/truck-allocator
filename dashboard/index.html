@@ -86,26 +86,29 @@
         <button class="btn btn-primary btn-sm" onclick="loadSchedules()">Refresh</button>
       </div>
     </div>
-    <div class="card-body" style="overflow-x:auto">
+    <div class="card-body">
       <div id="loading" style="padding:2rem;text-align:center"><div class="spinner"></div></div>
-      <table class="data-table" id="main-table" style="display:none;width:100%">
-        <thead>
-          <tr>
-            <th>ETA</th>
-            <th>Transporter</th>
-            <th>Driver Name</th>
-            <th>License No.</th>
-            <th>Dealer No.</th>
-            <th>Truck No.</th>
-            <th>Origin</th>
-            <th>Material</th>
-            <th>Route</th>
-            <th>Status</th>
-            <th>Action</th>
-          </tr>
-        </thead>
-        <tbody id="main-tbody"></tbody>
-      </table>
+      <!-- Responsive table wrapper for mobile scroll -->
+      <div class="data-table-wrapper">
+        <table class="data-table" id="main-table" style="display:none;width:100%">
+          <thead>
+            <tr>
+              <th>ETA</th>
+              <th>Transporter</th>
+              <th>Driver Name</th>
+              <th>License No.</th>
+              <th>Dealer No.</th>
+              <th>Truck No.</th>
+              <th>Origin</th>
+              <th>Material</th>
+              <th>Route</th>
+              <th>Status</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="main-tbody"></tbody>
+        </table>
+      </div>
       <div id="main-empty" class="empty-state" style="display:none">
         <div class="empty-state-icon">🚛</div>
         <div class="empty-state-title">No trucks scheduled</div>
@@ -120,24 +123,26 @@
       <summary id="allocated-summary" style="cursor:pointer;font-weight:600;color:#173158;padding:0.5rem 0">
         ▸ Allocated / Dispatched Trucks (0)
       </summary>
-      <div style="margin-top:0.75rem;overflow-x:auto">
-        <table class="data-table" id="allocated-table" style="width:100%">
-          <thead>
-            <tr>
-              <th>ETA</th>
-              <th>Transporter</th>
-              <th>Driver Name</th>
-              <th>License No.</th>
-              <th>Dealer No.</th>
-              <th>Truck No.</th>
-              <th>Origin</th>
-              <th>Material</th>
-              <th>Route</th>
-              <th>Status</th>
-            </tr>
-          </thead>
-          <tbody id="allocated-tbody"></tbody>
-        </table>
+      <div style="margin-top:0.75rem">
+        <div class="data-table-wrapper">
+          <table class="data-table" id="allocated-table" style="width:100%">
+            <thead>
+              <tr>
+                <th>ETA</th>
+                <th>Transporter</th>
+                <th>Driver Name</th>
+                <th>License No.</th>
+                <th>Dealer No.</th>
+                <th>Truck No.</th>
+                <th>Origin</th>
+                <th>Material</th>
+                <th>Route</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="allocated-tbody"></tbody>
+          </table>
+        </div>
       </div>
     </details>
   </div>

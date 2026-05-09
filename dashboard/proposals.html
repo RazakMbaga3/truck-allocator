@@ -147,23 +147,25 @@ async function loadAllProposals() {
       </div>
       <div class="card">
         <div class="card-body">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>Customer</th>
-                <th>Order Reference</th>
-                <th>Order Date</th>
-                <th>Product</th>
-                <th>Quantity</th>
-                <th>Location / District</th>
-                <th>Region</th>
-                <th>Variant</th>
-                <th>AI Rec.</th>
-                <th>Action</th>
-              </tr>
-            </thead>
-            <tbody>${rows}</tbody>
-          </table>
+          <div class="data-table-wrapper">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Customer</th>
+                  <th>Order Reference</th>
+                  <th>Order Date</th>
+                  <th>Product</th>
+                  <th>Quantity</th>
+                  <th>Location / District</th>
+                  <th>Region</th>
+                  <th>Variant</th>
+                  <th>AI Rec.</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>${rows}</tbody>
+            </table>
+          </div>
         </div>
       </div>`;
     document.getElementById('page-content').innerHTML = html;
