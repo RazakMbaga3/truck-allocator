@@ -53,6 +53,7 @@ class CementOrder(Base):
     quantity_bags: Mapped[int] = mapped_column(Integer, default=0)
 
     # ── Order value ───────────────────────────────────────────────
+    fresh_outbound_freight_tzs: Mapped[float] = mapped_column(Float, default=0.0)
     unit_price_tzs: Mapped[float] = mapped_column(Float, default=0.0)
     total_value_tzs: Mapped[float] = mapped_column(Float, default=0.0)
 

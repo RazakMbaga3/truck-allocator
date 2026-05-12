@@ -13,6 +13,7 @@ from app.models.allocation_proposal import (
     ProposalVariant,
     ProposalStatus,
 )
+from app.models.truck_allocation import TruckAllocation, AllocationItem, TruckAllocationStatus
 from app.models.matching_event import MatchingEvent, MatchTrigger
 from app.models.savings_ledger import SavingsLedger
 
@@ -29,6 +30,9 @@ __all__ = [
     "ProposalItem",
     "ProposalVariant",
     "ProposalStatus",
+    "TruckAllocation",
+    "AllocationItem",
+    "TruckAllocationStatus",
     "MatchingEvent",
     "MatchTrigger",
     "SavingsLedger",

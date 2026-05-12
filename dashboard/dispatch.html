@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Load Plan — Truck Allocator</title>
+  <link rel="stylesheet" href="/static/css/nyati.css" />
+  <style>
+    .truck-header { background:#173158; color:#fff; border-radius:8px;
+                    padding:1.25rem 1.5rem; margin-bottom:1.25rem; }
+    .truck-header-title { font-size:1.1rem; font-weight:700; margin-bottom:0.75rem; }
+    .truck-meta { display:flex; flex-wrap:wrap; gap:1rem 2rem; font-size:0.85rem; }
+    .truck-meta-item { display:flex; flex-direction:column; }
+    .truck-meta-label { font-size:0.68rem; font-weight:600; text-transform:uppercase;
+                        letter-spacing:0.05em; opacity:0.65; margin-bottom:0.15rem; }
+    .truck-meta-value { font-weight:600; }
+
+    .cap-bar-wrap { margin-top:1rem; }
+    .cap-bar-track { height:10px; background:rgba(255,255,255,0.2); border-radius:5px; margin-top:4px; }
+    .cap-bar-fill  { height:10px; background:#F49545; border-radius:5px; transition:width 0.3s; }
+    .cap-bar-fill.over { background:#dc2626; }
+
+    .form-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr));
+                 gap:0.75rem; align-items:end; }
+    .form-group label { display:block; font-size:0.72rem; font-weight:600;
+                        text-transform:uppercase; color:#6b7280; margin-bottom:0.3rem; }
+    .form-group input, .form-group select {
+      width:100%; padding:0.45rem 0.6rem; border:1px solid #d1d5db;
+      border-radius:6px; font-size:0.875rem; box-sizing:border-box;
+    }
+    .form-group input:focus, .form-group select:focus {
+      outline:none; border-color:#173158; box-shadow:0 0 0 2px rgba(23,49,88,0.15);
+    }
+    .add-btn { white-space:nowrap; align-self:end; }
+
+    .orders-table tbody tr td:last-child { text-align:center; }
+    .remove-btn { background:none; border:none; color:#dc2626; cursor:pointer;
+                  font-size:1rem; padding:0 4px; }
+    .remove-btn:hover { color:#991b1b; }
+
+    .action-row { display:flex; align-items:center; justify-content:flex-end;
+                  gap:1rem; margin-top:1.25rem; }
+    .total-label { font-size:0.9rem; color:#6b7280; }
+    .total-value { font-weight:700; color:#173158; font-size:1rem; }
+
+    .status-badge-waiting { display:inline-block; background:#fef3e8; color:#c05a00;
+                              padding:3px 10px; border-radius:4px; font-weight:700;
+                              font-size:0.8rem; }
+    .status-badge-loaded   { display:inline-block; background:#e6f9ef; color:#1a7a40;
+                              padding:3px 10px; border-radius:4px; font-weight:700;
+                              font-size:0.8rem; }
+  </style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-logo"><span>TRUCK</span>&nbsp;<span class="accent">ALLOCATOR</span></div>
+  <nav class="topbar-nav">
+    <a href="/">Schedule</a>
+    <a href="/loadplan" class="active">Load Plan</a>
+    <a href="/final">Final Status</a>
+  </nav>
+  <div class="topbar-status">
+    <div class="live-dot"></div>
+    <span id="sse-status">Connecting…</span>
+  </div>
+</header>
+
+<main class="page">
+  <div id="page-content">
+    <div class="empty-state">
+      <div class="spinner" style="width:32px;height:32px;border-width:3px"></div>
+      <div style="margin-top:1rem;color:var(--gray-400)">Loading…</div>
+    </div>
+  </div>
+</main>
+
+<div id="toast-container"></div>
+
+<script src="/static/js/api.js"></script>
+<script src="/static/js/schedule-feed.js"></script>
+<script>
+const params     = new URLSearchParams(location.search);
+const scheduleId = parseInt(params.get('schedule'));
+
+let schedule     = null;   // TruckScheduleRead
+let allocation   = null;   // TruckAllocationRead
+
+document.addEventListener('DOMContentLoaded', async () => {
+  if (!scheduleId) {
+    await loadDrafts();
+    return;
+  }
+  await loadPage();
+  const feed = new ScheduleFeed(() => {});
+  feed.connect();
+});
+
+// ── Load ────────────────────────────────────────────────────────────────────
+async function loadPage() {
+  try {
+    schedule = await API.schedule(scheduleId);
+
+    // Get or create the allocation for this schedule
+    const list = await API.allocations(`?schedule_id=${scheduleId}`);
+    if (list.length) {
+      allocation = await API.allocation(list[0].id);
+    } else {
+      allocation = await API.createAllocation({ schedule_id: scheduleId });
+    }
+
+    renderPage();
+  } catch (e) {
+    showError('Failed to load: ' + e.message);
+  }
+}
+
+async function loadDrafts() {
+  try {
+    const drafts = await API.allocations('?status=draft');
+    renderDrafts(drafts);
+  } catch (e) {
+    showError('Failed to load draft load plans: ' + e.message);
+  }
+}
+
+// ── Render ──────────────────────────────────────────────────────────────────
+function renderPage() {
+  const s  = schedule;
+  const a  = allocation;
+  const na = '—';
+
+  const isWaitingLoading = isWaitingLoadingStatus(a.status);
+  const isLoaded   = a.status === 'LOADED';
+
+  const statusBadge = isLoaded
+    ? '<span class="status-badge-loaded">LOADED</span>'
+    : isWaitingLoading
+      ? '<span class="status-badge-waiting">AWAITING LOADING</span>'
+      : '';
+
+  const cap   = s.effective_capacity_tonnes || s.estimated_qty_tonnes || 30;
+  const total = (a.items || []).reduce((n, i) => n + (i.quantity_tonnes || 0), 0);
+  const pct   = Math.min((total / cap) * 100, 100).toFixed(0);
+  const over  = total > cap;
+
+  document.getElementById('page-content').innerHTML = `
+    <div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:0.5rem">
+      <div>
+        <div class="page-title">
+          <a href="/" style="color:var(--gray-400);font-weight:400">← Schedule</a>
+          &nbsp;/&nbsp; Load Plan
+        </div>
+        <div class="page-subtitle">${s.odoo_po_name || s.schedule_ref} · ${s.origin_region}</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:0.75rem">${statusBadge}</div>
+    </div>
+
+    <!-- Truck header -->
+    <div class="truck-header">
+      <div class="truck-header-title">Truck Details</div>
+      <div class="truck-meta">
+        ${meta('PO Ref',       s.odoo_po_name || na)}
+        ${meta('Truck No.',    s.truck_plate  || na)}
+        ${meta('Transporter',  s.transporter_name || na)}
+        ${meta('Driver',       s.driver_name  || na)}
+        ${meta('License No.', s.driver_license_no || na)}
+        ${meta('Dealer No.',  s.dealer_number || na)}
+        ${meta('Location',    s.origin_region || na)}
+        ${meta('ETA',         s.expected_arrival_dt ? fmtDate(s.expected_arrival_dt) : na)}
+        ${meta('Capacity',    cap + ' T')}
+      </div>
+      <div class="cap-bar-wrap">
+        <div style="font-size:0.78rem;opacity:0.8">
+          Load: <strong id="load-total">${total.toFixed(1)}</strong> / ${cap} T
+          ${over ? '<span style="color:#fca5a5;margin-left:0.5rem">⚠ Over capacity</span>' : ''}
+        </div>
+        <div class="cap-bar-track">
+          <div class="cap-bar-fill ${over ? 'over' : ''}" id="cap-bar" style="width:${pct}%"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Add order form (always visible) -->
+    <div class="card" style="margin-bottom:1.25rem">
+      <div class="card-header"><span class="card-title">Add Order</span></div>
+      <div class="card-body">
+        <div class="form-grid" id="order-form">
+          <div class="form-group">
+            <label>Customer</label>
+            <input id="f-customer" type="text" placeholder="Customer name" />
+          </div>
+          <div class="form-group">
+            <label>Order Reference</label>
+            <input id="f-order-ref" type="text" placeholder="SO/2026/01234" />
+          </div>
+          <div class="form-group">
+            <label>Order Date</label>
+            <input id="f-order-date" type="date" />
+          </div>
+          <div class="form-group">
+            <label>Product</label>
+            <select id="f-product">
+              <option value="">— Select —</option>
+              <option value="CEM I OPC 42.5N">CEM I OPC 42.5N</option>
+              <option value="CEM II A-L 42.5 R">CEM II A-L 42.5 R</option>
+              <option value="CEM II B-L 32.5N">CEM II B-L 32.5N</option>
+              <option value="CEM II B-M 42.5 N">CEM II B-M 42.5 N</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Quantity (T)</label>
+            <input id="f-qty" type="number" min="0.1" step="0.1" placeholder="30.0" />
+          </div>
+          <div class="form-group">
+            <label>Destination Location</label>
+            <input id="f-destination" type="text" placeholder="e.g. Temeke" />
+          </div>
+          <div class="form-group">
+            <label>Region</label>
+            <input id="f-region" type="text" placeholder="e.g. Dar es Salaam" />
+          </div>
+          <div class="form-group add-btn">
+            <button class="btn btn-primary" onclick="addItem()">Allocate</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Orders table -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Orders on this Truck</span>
+        <span style="font-size:0.82rem;color:#6b7280">${(a.items||[]).length} order(s)</span>
+      </div>
+      <div class="card-body">
+        ${(a.items && a.items.length) ? `
+        <table class="data-table orders-table">
+          <thead>
+            <tr>
+              <th>Customer</th>
+              <th>Order Reference</th>
+              <th>Order Date</th>
+              <th>Product</th>
+              <th>Qty (T)</th>
+              <th>Destination Location</th>
+              <th>Region</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            ${(a.items || []).map(item => `
+              <tr>
+                <td>${item.customer_name}</td>
+                <td class="mono" style="font-size:0.8rem">${item.order_ref}</td>
+                <td>${item.order_date || '—'}</td>
+                <td style="font-size:0.82rem">${item.product}</td>
+                <td><strong>${item.quantity_tonnes.toFixed(1)}</strong></td>
+                <td>${item.destination_location}</td>
+                <td>${item.region}</td>
+                <td><button class="remove-btn" onclick="removeItem(${item.id})" title="Remove">✕</button></td>
+              </tr>`).join('')}
+          </tbody>
+        </table>` : `
+        <div class="empty-state" style="padding:2rem">
+          <div style="color:#9ca3af">No orders added yet.</div>
+        </div>`}
+      </div>
+    </div>
+
+    <!-- Actions -->
+    <div class="action-row">
+      <span class="total-label">Total Load: <span class="total-value">${total.toFixed(1)} T</span> / ${cap} T</span>
+      ${isLoaded ? `
+        <button class="btn btn-outline btn-sm" onclick="openRemarks()">Edit Remark</button>
+        <button class="btn btn-outline btn-sm" style="color:#dc2626;border-color:#dc2626" onclick="revertToDraft()">↩ Revert to Draft</button>
+      ` : isWaitingLoading ? `
+        <button class="btn btn-primary" onclick="markLoaded()">Mark Loaded</button>
+        <button class="btn btn-outline btn-sm" onclick="openRemarks()">Add Remark</button>
+        <button class="btn btn-outline btn-sm" style="color:#dc2626;border-color:#dc2626" onclick="revertToDraft()">↩ Revert to Draft</button>
+      ` : `
+        <button class="btn btn-green" onclick="loadAllocation()" ${!(a.items&&a.items.length) ? 'disabled title="Add at least one order first"' : ''}>
+          Load
+        </button>
+      `}
+    </div>
+
+    <!-- Remarks panel (shown if exists) -->
+    ${a.remarks ? `
+    <div style="margin-top:1rem;background:#fef3e8;border:1px solid #f5c842;border-radius:6px;padding:0.75rem 1rem;font-size:0.85rem">
+      <strong>Remark:</strong> ${a.remarks}
+    </div>` : ''}
+
+    <!-- Remarks edit (hidden by default) -->
+    <div id="remarks-panel" style="display:none;margin-top:1rem">
+      <div class="card">
+        <div class="card-body" style="display:flex;gap:0.75rem;align-items:center">
+          <input id="remarks-input" type="text" placeholder="Enter remark (e.g. transporter refused…)"
+                 value="${a.remarks || ''}" style="flex:1;padding:0.45rem 0.6rem;border:1px solid #d1d5db;border-radius:6px;font-size:0.875rem" />
+          <button class="btn btn-primary btn-sm" onclick="saveRemarks()">Save</button>
+          <button class="btn btn-outline btn-sm" onclick="document.getElementById('remarks-panel').style.display='none'">Cancel</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+function renderDrafts(drafts) {
+  const rows = drafts.map(a => {
+    const na = '—';
+    const eta = a.expected_arrival_dt ? fmtDate(a.expected_arrival_dt) : na;
+    return `<tr>
+      <td><strong>${eta}</strong></td>
+      <td class="mono" style="font-size:0.8rem">${a.odoo_po_name || na}</td>
+      <td class="mono">${a.truck_plate || na}</td>
+      <td>${a.transporter_name || na}</td>
+      <td>${a.driver_name || na}</td>
+      <td>${a.origin_region || na}</td>
+      <td>${a.item_count || 0}</td>
+      <td><strong>${(a.total_tonnes || 0).toFixed(1)} T</strong></td>
+      <td><a href="/loadplan?schedule=${a.schedule_id}" class="btn btn-primary btn-sm">Continue Draft</a></td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('page-content').innerHTML = `
+    <div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:0.5rem">
+      <div>
+        <div class="page-title">Draft Load Plans</div>
+        <div class="page-subtitle">Started allocations that are not yet ready for loading</div>
+      </div>
+      <a href="/" class="btn btn-outline btn-sm">Back to Schedule</a>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Unfinished Load Plans</span>
+        <button class="btn btn-outline btn-sm" onclick="loadDrafts()">Refresh</button>
+      </div>
+      <div class="card-body">
+        ${drafts.length ? `
+        <div class="data-table-wrapper">
+          <table class="data-table" style="width:100%">
+            <thead>
+              <tr>
+                <th>ETA</th>
+                <th>PO Ref</th>
+                <th>Truck No.</th>
+                <th>Transporter</th>
+                <th>Driver</th>
+                <th>Location</th>
+                <th>Orders</th>
+                <th>Total MT</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>` : `
+        <div class="empty-state" style="padding:2rem">
+          <div class="empty-state-title">No draft load plans</div>
+          <div>Start from the Schedule page by choosing a truck to allocate.</div>
+        </div>`}
+      </div>
+    </div>`;
+}
+
+// ── Helpers ─────────────────────────────────────────────────────────────────
+function meta(label, value) {
+  return `<div class="truck-meta-item">
+    <span class="truck-meta-label">${label}</span>
+    <span class="truck-meta-value">${value}</span>
+  </div>`;
+}
+
+function isWaitingLoadingStatus(status) {
+  return status === 'WAITING_LOADING' || status === 'RELEASED';
+}
+
+// ── Actions ─────────────────────────────────────────────────────────────────
+async function addItem() {
+  const customer     = document.getElementById('f-customer').value.trim();
+  const orderRef     = document.getElementById('f-order-ref').value.trim();
+  const orderDate    = document.getElementById('f-order-date').value || null;
+  const product      = document.getElementById('f-product').value;
+  const qty          = parseFloat(document.getElementById('f-qty').value);
+  const destination  = document.getElementById('f-destination').value.trim();
+  const region       = document.getElementById('f-region').value.trim();
+
+  if (!customer || !orderRef || !product || !qty || !destination || !region) {
+    showToast('Please fill in all fields before adding.', 'orange');
+    return;
+  }
+
+  try {
+    await API.addItem(allocation.id, {
+      customer_name: customer,
+      order_ref: orderRef,
+      order_date: orderDate,
+      product,
+      quantity_tonnes: qty,
+      destination_location: destination,
+      region,
+    });
+    // Clear form
+    ['f-customer','f-order-ref','f-order-date','f-qty','f-destination','f-region'].forEach(id => {
+      document.getElementById(id).value = '';
+    });
+    document.getElementById('f-product').value = '';
+    showToast('Order allocated.', 'green');
+    await refreshAllocation();
+  } catch (e) {
+    showToast('Failed to add order: ' + e.message, 'orange');
+  }
+}
+
+async function removeItem(itemId) {
+  if (!confirm('Remove this order from the truck?')) return;
+  try {
+    await API.removeItem(allocation.id, itemId);
+    showToast('Order removed.');
+    await refreshAllocation();
+  } catch (e) {
+    showToast('Failed to remove: ' + e.message, 'orange');
+  }
+}
+
+async function loadAllocation() {
+  if (!confirm('Mark this load plan ready for loading?\n\nThis confirms the orders assigned to this truck.')) return;
+  try {
+    await API.loadAllocation(allocation.id);
+    showToast('Load plan ready for loading.', 'green');
+    await refreshAllocation();
+  } catch (e) {
+    showToast('Load failed: ' + e.message, 'orange');
+  }
+}
+
+async function markLoaded() {
+  if (!confirm('Mark this truck as LOADED?\n\nThis confirms physical cement loading is complete.')) return;
+  try {
+    await API.markLoaded(allocation.id);
+    showToast('Truck marked as Loaded.', 'green');
+    await refreshAllocation();
+  } catch (e) {
+    showToast('Failed: ' + e.message, 'orange');
+  }
+}
+
+function openRemarks() {
+  document.getElementById('remarks-panel').style.display = 'block';
+  document.getElementById('remarks-input').focus();
+}
+
+async function saveRemarks() {
+  const text = document.getElementById('remarks-input').value.trim();
+  if (!text) { showToast('Remark cannot be empty.', 'orange'); return; }
+  try {
+    await API.setRemarks(allocation.id, text);
+    showToast('Remark saved.', 'green');
+    await refreshAllocation();
+  } catch (e) {
+    showToast('Failed: ' + e.message, 'orange');
+  }
+}
+
+async function revertToDraft() {
+  if (!confirm('Revert this allocation back to Draft?\n\nYou will be able to add or remove orders again.')) return;
+  try {
+    await API.revertAllocation(allocation.id);
+    showToast('Reverted to Draft.', 'green');
+    await refreshAllocation();
+  } catch (e) {
+    showToast('Failed to revert: ' + e.message, 'orange');
+  }
+}
+
+async function refreshAllocation() {
+  const list = await API.allocations(`?schedule_id=${scheduleId}`);
+  if (list.length) allocation = await API.allocation(list[0].id);
+  renderPage();
+}
+
+function showError(msg) {
+  document.getElementById('page-content').innerHTML =
+    `<div class="empty-state"><div class="empty-state-title">${msg}</div></div>`;
+}
+</script>
+</body>
+</html>

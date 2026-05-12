@@ -28,10 +28,16 @@ class TruckScheduleStatus:
 
 
 class AllocationStatus:
-    UNMATCHED  = "UNMATCHED"
-    PROPOSED   = "PROPOSED"
-    CONFIRMED  = "CONFIRMED"
-    DISPATCHED = "DISPATCHED"
+    UNALLOCATED = "UNALLOCATED"
+    PROPOSED    = "PROPOSED"
+    WAITING_LOADING = "WAITING_LOADING"
+    RELEASED    = "RELEASED"
+    LOADED      = "LOADED"
+
+    # Backward-compatible names used by the proposal-based workflow.
+    UNMATCHED   = UNALLOCATED
+    CONFIRMED   = WAITING_LOADING
+    DISPATCHED  = LOADED
 
 
 class TruckSchedule(Base):
@@ -87,7 +93,7 @@ class TruckSchedule(Base):
         String(20), nullable=False, default=TruckScheduleStatus.EXPECTED, index=True
     )
     allocation_status: Mapped[str] = mapped_column(
-        String(20), nullable=False, default=AllocationStatus.UNMATCHED, index=True
+        String(20), nullable=False, default=AllocationStatus.UNALLOCATED, index=True
     )
 
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -100,6 +106,9 @@ class TruckSchedule(Base):
     # Relationships
     proposals: Mapped[list] = relationship(
         "AllocationProposal", back_populates="schedule", cascade="all, delete-orphan"
+    )
+    allocation: Mapped["TruckAllocation"] = relationship(
+        "TruckAllocation", back_populates="schedule", uselist=False
     )
 
     @property
@@ -116,9 +125,8 @@ class TruckSchedule(Base):
 
     @property
     def is_available(self) -> bool:
-        return (
-            self.status in (TruckScheduleStatus.EXPECTED, TruckScheduleStatus.PRE_CONFIRMED)
-            and self.allocation_status != AllocationStatus.CONFIRMED
+        return self.allocation_status not in (
+            AllocationStatus.WAITING_LOADING, AllocationStatus.RELEASED, AllocationStatus.LOADED
         )
 
     def __repr__(self) -> str:

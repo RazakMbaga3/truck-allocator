@@ -37,8 +37,8 @@
   </div>
   <nav class="topbar-nav">
     <a href="/" class="active">Schedule</a>
-    <a href="/proposals">Proposals</a>
-    <a href="/confirmed">Confirmed</a>
+    <a href="/loadplan">Load Plan</a>
+    <a href="/final">Final Status</a>
   </nav>
   <div class="topbar-status">
     <div class="live-dot"></div>
@@ -61,19 +61,19 @@
       <div class="kpi-sub">awaiting allocation</div>
     </div>
     <div class="kpi-card">
-      <div class="kpi-label">Unallocated Orders</div>
-      <div class="kpi-value orange" id="kpi-orders">—</div>
-      <div class="kpi-sub">ready for loading</div>
+      <div class="kpi-label">Draft Load Plans</div>
+      <div class="kpi-value orange" id="kpi-drafts">—</div>
+      <div class="kpi-sub">started, not ready</div>
     </div>
     <div class="kpi-card">
-      <div class="kpi-label">Avg Utilization</div>
-      <div class="kpi-value green" id="kpi-util">—</div>
-      <div class="kpi-sub">matched trucks</div>
+      <div class="kpi-label">Awaiting Loading</div>
+      <div class="kpi-value green" id="kpi-released">—</div>
+      <div class="kpi-sub">awaiting loading</div>
     </div>
     <div class="kpi-card">
-      <div class="kpi-label">Matched This Month</div>
-      <div class="kpi-value" id="kpi-matched">—</div>
-      <div class="kpi-sub" id="kpi-month">—</div>
+      <div class="kpi-label">Loaded This Month</div>
+      <div class="kpi-value" id="kpi-loaded">—</div>
+      <div class="kpi-sub" id="kpi-completion">—</div>
     </div>
   </div>
 
@@ -82,6 +82,7 @@
     <div class="card-header">
       <span class="card-title">Inbound Trucks</span>
       <div style="display:flex;gap:0.5rem;align-items:center">
+        <button class="btn btn-outline btn-sm" onclick="exportSchedulesExcel()">Export Excel</button>
         <button class="btn btn-outline btn-sm" onclick="syncNow()">⟳ Sync Odoo</button>
         <button class="btn btn-primary btn-sm" onclick="loadSchedules()">Refresh</button>
       </div>
@@ -94,15 +95,14 @@
           <thead>
             <tr>
               <th>ETA</th>
+              <th>PO Ref</th>
+              <th>Material</th>
               <th>Transporter</th>
               <th>Driver Name</th>
               <th>License No.</th>
               <th>Dealer No.</th>
               <th>Truck No.</th>
-              <th>Origin</th>
-              <th>Material</th>
-              <th>Route</th>
-              <th>Status</th>
+              <th>Location</th>
               <th>Action</th>
             </tr>
           </thead>
@@ -129,15 +129,15 @@
             <thead>
               <tr>
                 <th>ETA</th>
+                <th>PO Ref</th>
+                <th>Material</th>
                 <th>Transporter</th>
                 <th>Driver Name</th>
                 <th>License No.</th>
                 <th>Dealer No.</th>
                 <th>Truck No.</th>
-                <th>Origin</th>
-                <th>Material</th>
-                <th>Route</th>
-                <th>Status</th>
+                <th>Location</th>
+                <th>Alloc. Status</th>
               </tr>
             </thead>
             <tbody id="allocated-tbody"></tbody>
@@ -167,11 +167,11 @@ async function loadKPIs() {
   try {
     const s = await API.summary();
     document.getElementById('kpi-trucks').textContent   = s.trucks_expected_next_7d ?? '—';
-    document.getElementById('kpi-orders').textContent   = s.unallocated_orders_count ?? '—';
-    document.getElementById('kpi-util').textContent     = s.avg_utilization_pct != null
-      ? s.avg_utilization_pct.toFixed(0) + '%' : '—';
-    document.getElementById('kpi-matched').textContent  = s.confirmed_proposals_mtd ?? '—';
-    document.getElementById('kpi-month').textContent    = s.month_key ?? '—';
+    document.getElementById('kpi-drafts').textContent   = s.draft_load_plans ?? '—';
+    document.getElementById('kpi-released').textContent = s.waiting_loading_allocations ?? s.released_awaiting_loading ?? '—';
+    document.getElementById('kpi-loaded').textContent   = s.loaded_allocations_mtd ?? '—';
+    document.getElementById('kpi-completion').textContent =
+      `${s.load_plan_completion_pct ?? 0}% completion · ${s.month_key ?? '—'}`;
   } catch (e) {
     console.warn('KPI load failed:', e);
   }
@@ -184,15 +184,16 @@ async function loadSchedules() {
   document.getElementById('main-empty').style.display = 'none';
 
   try {
-    const all = await API.schedules('?status=all');
+    const [all, draftAllocations] = await Promise.all([
+      API.schedules('?status=all'),
+      API.allocations('?status=draft'),
+    ]);
+    const draftBySchedule = new Map(draftAllocations.map(a => [a.schedule_id, a]));
 
-    const available  = all.filter(s => s.is_available !== false &&
-      !['CONFIRMED','DISPATCHED','COMPLETED'].includes(s.allocation_status));
-    const allocated  = all.filter(s =>
-      ['CONFIRMED','DISPATCHED','COMPLETED'].includes(s.allocation_status) ||
-      s.status === 'DISPATCHED');
+    const available  = all.filter(s => !['WAITING_LOADING','RELEASED','LOADED'].includes(s.allocation_status));
+    const allocated  = all.filter(s => ['WAITING_LOADING','RELEASED','LOADED'].includes(s.allocation_status));
 
-    renderTable('main-tbody', 'main-table', 'main-empty', 'loading', available, true);
+    renderTable('main-tbody', 'main-table', 'main-empty', 'loading', available, true, draftBySchedule);
     renderAllocated(allocated);
 
     document.getElementById('last-sync').textContent =
@@ -205,38 +206,40 @@ async function loadSchedules() {
 }
 
 // ── Render helpers ─────────────────────────────────────────────────────────
-function truckRow(s, showAction) {
-  const na = '<span class="na">—</span>';
-  const transporter = s.transporter_name || (s.transporter ? s.transporter.name : null) || na;
+function truckRow(s, showAction, draftBySchedule = new Map()) {
+  const na          = '<span class="na">—</span>';
+  const eta         = s.expected_arrival_dt ? fmtDate(s.expected_arrival_dt) : na;
+  const poRef       = s.odoo_po_name ? `<span class="mono">${s.odoo_po_name}</span>` : na;
+  const material    = s.raw_material_type || na;
+  const transporter = s.transporter_name || na;
   const driver      = s.driver_name      || na;
   const license     = s.driver_license_no || na;
   const dealer      = s.dealer_number    || na;
   const plate       = s.truck_plate      ? `<span class="mono">${s.truck_plate}</span>` : na;
-  const origin      = s.origin_region    || na;
-  const material    = s.raw_material_type || na;
-  const route       = s.corridor_name
-    ? `<span class="route-badge">${s.corridor_name.replace('_',' ')}</span>` : na;
-  const eta         = s.expected_arrival_dt ? fmtDate(s.expected_arrival_dt) : na;
-  const status      = fmtStatus(s.status);
+  const location    = s.origin_region    || na;
+  const allocStatus = fmtAllocStatus(s.allocation_status);
+  const draftAlloc  = draftBySchedule.get(s.id);
   const action      = showAction
-    ? `<a href="/proposals?schedule=${s.id}" class="btn btn-primary btn-sm">Review</a>` : '';
+    ? draftAlloc
+      ? `<a href="/loadplan?schedule=${s.id}" class="btn btn-outline btn-sm">Continue Draft</a>`
+      : `<a href="/loadplan?schedule=${s.id}" class="btn btn-primary btn-sm">Allocate →</a>`
+    : allocStatus;
 
   return `<tr id="sched-row-${s.id}">
     <td><strong>${eta}</strong></td>
+    <td>${poRef}</td>
+    <td>${material}</td>
     <td>${transporter}</td>
     <td>${driver}</td>
     <td class="mono" style="font-size:0.8rem">${license}</td>
     <td class="mono" style="font-size:0.8rem">${dealer}</td>
     <td>${plate}</td>
-    <td><strong>${origin}</strong></td>
-    <td>${material}</td>
-    <td>${route}</td>
-    <td>${status}</td>
-    ${showAction ? `<td>${action}</td>` : ''}
+    <td><strong>${location}</strong></td>
+    <td>${action}</td>
   </tr>`;
 }
 
-function renderTable(tbodyId, tableId, emptyId, loadingId, schedules, showAction) {
+function renderTable(tbodyId, tableId, emptyId, loadingId, schedules, showAction, draftBySchedule = new Map()) {
   if (loadingId) document.getElementById(loadingId).style.display = 'none';
 
   if (!schedules.length) {
@@ -247,7 +250,7 @@ function renderTable(tbodyId, tableId, emptyId, loadingId, schedules, showAction
 
   document.getElementById(tableId).style.display = 'table';
   document.getElementById(emptyId).style.display = 'none';
-  document.getElementById(tbodyId).innerHTML = schedules.map(s => truckRow(s, showAction)).join('');
+  document.getElementById(tbodyId).innerHTML = schedules.map(s => truckRow(s, showAction, draftBySchedule)).join('');
 }
 
 function renderAllocated(schedules) {
@@ -257,15 +260,26 @@ function renderAllocated(schedules) {
     schedules.map(s => truckRow(s, false)).join('');
 }
 
+function fmtAllocStatus(s) {
+  const map = {
+    UNALLOCATED: ['pill-expected',  'Unallocated'],
+    WAITING_LOADING: ['pill-confirmed', 'Awaiting Loading'],
+    RELEASED:    ['pill-confirmed', 'Awaiting Loading'],
+    LOADED:      ['pill-arrived',   'Loaded ✓'],
+  };
+  const [cls, label] = map[s] || ['pill-expected', s || '—'];
+  return `<span class="pill ${cls}">${label}</span>`;
+}
+
 // ── SSE ────────────────────────────────────────────────────────────────────
 function handleSSEEvent(type, data) {
-  if (['truck_allocated','truck_arrived','proposals_updated','schedule_updated','truck_dispatched'].includes(type)) {
+  if (['truck_allocated','truck_arrived','schedule_updated','truck_dispatched'].includes(type)) {
     loadSchedules();
     loadKPIs();
     if (type === 'truck_allocated')
-      showToast(`Truck allocated: ${data.schedule_ref}`, 'green');
+      showToast(`Awaiting loading: ${data.schedule_ref}`, 'green');
     if (type === 'truck_dispatched')
-      showToast(`Dispatched: ${data.truck_plate || data.schedule_ref}`, 'green');
+      showToast(`Loaded: ${data.schedule_ref}`, 'green');
   }
 }
 
@@ -280,6 +294,10 @@ async function syncNow() {
   } catch (e) {
     showToast('Sync failed: ' + e.message, 'orange');
   }
+}
+
+function exportSchedulesExcel() {
+  window.location.href = '/api/schedules/export?status=all';
 }
 </script>
 </body>

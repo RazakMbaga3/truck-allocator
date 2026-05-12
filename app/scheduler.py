@@ -127,7 +127,11 @@ async def job_pre_arrival_rematch() -> None:
             result = await session.execute(
                 select(TruckSchedule).where(
                     TruckSchedule.status.in_([TruckScheduleStatus.EXPECTED, TruckScheduleStatus.PRE_CONFIRMED]),
-                    TruckSchedule.allocation_status != AllocationStatus.CONFIRMED,
+                    TruckSchedule.allocation_status.notin_([
+                        AllocationStatus.WAITING_LOADING,
+                        AllocationStatus.RELEASED,
+                        AllocationStatus.LOADED,
+                    ]),
                     TruckSchedule.expected_arrival_dt <= cutoff,
                 )
             )

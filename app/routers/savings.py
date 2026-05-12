@@ -1,13 +1,15 @@
 """app/routers/savings.py — Savings KPI endpoints."""
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.models import AllocationStatus, TruckSchedule
 from app.models.savings_ledger import SavingsLedger
+from app.models.truck_allocation import TruckAllocation, TruckAllocationStatus
 
 router = APIRouter(prefix="/api/savings", tags=["savings"])
 
@@ -15,7 +17,10 @@ router = APIRouter(prefix="/api/savings", tags=["savings"])
 @router.get("/summary")
 async def savings_summary(db: AsyncSession = Depends(get_db)):
     """MTD savings summary — powers the KPI header."""
-    month_key = datetime.now(timezone.utc).strftime("%Y-%m")
+    now = datetime.now(timezone.utc)
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    month_key = now.strftime("%Y-%m")
+    next_7d = now + timedelta(days=7)
 
     result = await db.execute(
         select(
@@ -40,8 +45,53 @@ async def savings_summary(db: AsyncSession = Depends(get_db)):
     )
     hrow = hist.one()
 
+    expected_result = await db.execute(
+        select(func.count(TruckSchedule.id)).where(
+            TruckSchedule.expected_arrival_dt <= next_7d,
+            TruckSchedule.allocation_status.notin_([
+                AllocationStatus.WAITING_LOADING,
+                AllocationStatus.RELEASED,
+                AllocationStatus.LOADED,
+            ]),
+        )
+    )
+    draft_result = await db.execute(
+        select(func.count(TruckAllocation.id)).where(
+            TruckAllocation.status == TruckAllocationStatus.DRAFT
+        )
+    )
+    released_result = await db.execute(
+        select(func.count(TruckAllocation.id)).where(
+            TruckAllocation.status.in_([
+                TruckAllocationStatus.WAITING_LOADING,
+                TruckAllocationStatus.RELEASED,
+            ])
+        )
+    )
+    loaded_result = await db.execute(
+        select(func.count(TruckAllocation.id)).where(
+            TruckAllocation.status == TruckAllocationStatus.LOADED,
+            TruckAllocation.loaded_at >= month_start,
+        )
+    )
+
+    drafts_open = draft_result.scalar() or 0
+    released_open = released_result.scalar() or 0
+    loaded_mtd = loaded_result.scalar() or 0
+    active_load_plans = drafts_open + released_open
+
     return {
         "month_key": month_key,
+        "trucks_expected_next_7d": expected_result.scalar() or 0,
+        "draft_load_plans": drafts_open,
+        "released_awaiting_loading": released_open,
+        "waiting_loading_allocations": released_open,
+        "loaded_allocations_mtd": loaded_mtd,
+        "active_load_plans": active_load_plans,
+        "load_plan_completion_pct": round(
+            loaded_mtd / (active_load_plans + loaded_mtd) * 100,
+            1,
+        ) if (active_load_plans + loaded_mtd) else 0.0,
         "confirmed_proposals_mtd": row.trip_count or 0,
         "net_savings_tzs": round(row.net_savings or 0, 2),
         "fresh_freight_avoided_tzs": round(row.fresh_avoided or 0, 2),

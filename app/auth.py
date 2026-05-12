@@ -51,6 +51,8 @@ _PUBLIC_PATHS: frozenset[str] = frozenset({
     "/",
     "/proposals",
     "/confirmed",
+    "/loadplan",
+    "/final",
 })
 
 _PUBLIC_PREFIXES: tuple[str, ...] = (

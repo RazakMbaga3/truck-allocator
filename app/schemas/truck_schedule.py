@@ -74,6 +74,7 @@ class TruckScheduleListItem(BaseModel):
 
     id: int
     schedule_ref: str
+    odoo_po_name: str | None
     origin_region: str
     raw_material_type: str | None
     estimated_qty_tonnes: float

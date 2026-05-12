@@ -82,11 +82,13 @@ def create_app() -> FastAPI:
     from app.routers.proposals import router as proposals_router
     from app.routers.orders import router as orders_router
     from app.routers.savings import router as savings_router
+    from app.routers.allocations import router as allocations_router
 
     app.include_router(schedules_router)
     app.include_router(proposals_router)
     app.include_router(orders_router)
     app.include_router(savings_router)
+    app.include_router(allocations_router)
 
     # ── Health endpoint ───────────────────────────────────────────
     @app.get("/api/health", tags=["system"])
@@ -157,13 +159,13 @@ def create_app() -> FastAPI:
         async def serve_dashboard():
             return FileResponse(os.path.join(dashboard_dir, "index.html"))
 
-        @app.get("/proposals", include_in_schema=False)
-        async def serve_proposals():
-            return FileResponse(os.path.join(dashboard_dir, "proposals.html"))
+        @app.get("/loadplan", include_in_schema=False)
+        async def serve_loadplan():
+            return FileResponse(os.path.join(dashboard_dir, "dispatch.html"))
 
-        @app.get("/confirmed", include_in_schema=False)
-        async def serve_confirmed():
-            return FileResponse(os.path.join(dashboard_dir, "confirmed.html"))
+        @app.get("/final", include_in_schema=False)
+        async def serve_final():
+            return FileResponse(os.path.join(dashboard_dir, "final.html"))
 
     return app
 

@@ -32,25 +32,36 @@ const API = {
     return res.json();
   },
 
-  // Convenience methods
+  async delete(path) {
+    const res = await fetch(this.base + path, { method: 'DELETE' });
+    if (!res.ok && res.status !== 204) throw new Error(`DELETE ${path} → ${res.status}`);
+    if (res.status === 204) return null;
+    return res.json();
+  },
+
+  // ── Schedules ──────────────────────────────────────────────────────────────
   schedules:  (params = '') => API.get(`/api/schedules${params}`),
   schedule:   (id)          => API.get(`/api/schedules/${id}`),
-  proposals:  (params = '') => API.get(`/api/proposals${params}`),
-  proposal:   (id)          => API.get(`/api/proposals/${id}`),
-  orders:     (params = '') => API.get(`/api/orders${params}`),
-  summary:    ()            => API.get('/api/savings/summary'),
-  health:     ()            => API.get('/api/health'),
+  syncOrders: ()            => API.post('/api/orders/sync', {}),
+  markArrived:(id)          => API.patch(`/api/schedules/${id}/arrived`, {}),
 
-  confirmProposal: (id, confirmedBy = 'dispatcher') =>
-    API.patch(`/api/proposals/${id}/confirm`, { confirmed_by: confirmedBy }),
+  // ── Allocations (new dispatcher workflow) ─────────────────────────────────
+  allocations:       (params = '')       => API.get(`/api/allocations${params}`),
+  allocation:        (id)                => API.get(`/api/allocations/${id}`),
+  createAllocation:  (body)              => API.post('/api/allocations', body),
+  addItem:           (id, item)          => API.post(`/api/allocations/${id}/items`, item),
+  removeItem:        (id, itemId)        => API.delete(`/api/allocations/${id}/items/${itemId}`),
+  loadAllocation:    (id, by = 'dispatcher') =>
+    API.patch(`/api/allocations/${id}/load`, { released_by: by }),
+  releaseAllocation: (id, by = 'dispatcher') =>
+    API.loadAllocation(id, by),
+  markLoaded:        (id)                => API.patch(`/api/allocations/${id}/loaded`, {}),
+  revertAllocation:  (id)               => API.patch(`/api/allocations/${id}/revert`, {}),
+  setRemarks:        (id, text)          => API.patch(`/api/allocations/${id}/remarks`, { remarks: text }),
 
-  rejectProposal: (id) =>
-    API.patch(`/api/proposals/${id}/reject`, {}),
-
-  markArrived:  (id) => API.patch(`/api/schedules/${id}/arrived`, {}),
-  markDispatch: (id) => API.patch(`/api/schedules/${id}/dispatch`, {}),
-  rematch:      (id) => API.post(`/api/schedules/${id}/rematch`, {}),
-  syncOrders:   ()   => API.post('/api/orders/sync', {}),
+  // ── Misc ──────────────────────────────────────────────────────────────────
+  summary: () => API.get('/api/savings/summary'),
+  health:  () => API.get('/api/health'),
 };
 
 // ── Formatting helpers ────────────────────────────────────────────────────────

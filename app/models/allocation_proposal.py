@@ -49,6 +49,10 @@ class AllocationProposal(Base):
     capacity_utilization_pct: Mapped[float] = mapped_column(Float, default=0.0)
     total_route_deviation_km: Mapped[float] = mapped_column(Float, default=0.0)
     number_of_stops: Mapped[int] = mapped_column(Integer, default=0)
+    total_fresh_freight_tzs: Mapped[float] = mapped_column(Float, default=0.0)
+    total_return_freight_tzs: Mapped[float] = mapped_column(Float, default=0.0)
+    holding_cost_tzs: Mapped[float] = mapped_column(Float, default=0.0)
+    estimated_savings_tzs: Mapped[float] = mapped_column(Float, default=0.0)
     composite_score: Mapped[float] = mapped_column(Float, default=0.0)
 
     # ── AI Advisory ───────────────────────────────────────────────
@@ -122,6 +126,7 @@ class ProposalItem(Base):
     sequence: Mapped[int] = mapped_column(Integer, default=1)
 
     delivery_deviation_km: Mapped[float] = mapped_column(Float, default=0.0)
+    item_savings_tzs: Mapped[float] = mapped_column(Float, default=0.0)
     is_near_ready: Mapped[bool] = mapped_column(Boolean, default=False)
 
     odoo_picking_id: Mapped[int | None] = mapped_column(Integer, nullable=True)

@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import json
 from datetime import datetime, timezone
+from io import BytesIO
 from typing import AsyncGenerator
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -73,7 +74,11 @@ async def list_schedules(
     if status == "available":
         q = q.where(
             TruckSchedule.status.in_([TSS.EXPECTED, TSS.PRE_CONFIRMED]),
-            TruckSchedule.allocation_status != AllocationStatus.CONFIRMED,
+            TruckSchedule.allocation_status.notin_([
+                AllocationStatus.WAITING_LOADING,
+                AllocationStatus.RELEASED,
+                AllocationStatus.LOADED,
+            ]),
         )
     elif status == "expected":
         q = q.where(TruckSchedule.status == TSS.EXPECTED)
@@ -84,6 +89,104 @@ async def list_schedules(
     result = await db.execute(q)
     schedules = result.scalars().all()
     return [TruckScheduleListItem.model_validate(s) for s in schedules]
+
+
+# ── GET /api/schedules/export ────────────────────────────────────────────────
+
+@router.get("/export")
+async def export_schedules_excel(
+    status: str = Query("all", description="available | all | expected | arrived | dispatched"),
+    db: AsyncSession = Depends(get_db),
+):
+    """Export scheduled trucks as an Excel workbook."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill
+    from openpyxl.utils import get_column_letter
+
+    q = select(TruckSchedule)
+
+    if status == "available":
+        q = q.where(
+            TruckSchedule.status.in_([TSS.EXPECTED, TSS.PRE_CONFIRMED]),
+            TruckSchedule.allocation_status.notin_([
+                AllocationStatus.RELEASED,
+                AllocationStatus.LOADED,
+            ]),
+        )
+    elif status == "expected":
+        q = q.where(TruckSchedule.status == TSS.EXPECTED)
+    elif status != "all":
+        q = q.where(TruckSchedule.status == status.upper())
+
+    q = q.order_by(TruckSchedule.expected_arrival_dt.asc().nulls_last())
+    result = await db.execute(q)
+    schedules = result.scalars().all()
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Scheduled Trucks"
+
+    headers = [
+        "ETA",
+        "PO Ref",
+        "Material",
+        "Transporter",
+        "Driver Name",
+        "License No.",
+        "Dealer No.",
+        "Truck No.",
+        "Location",
+        "Schedule Ref",
+        "Truck Status",
+        "Allocation Status",
+        "Estimated Qty (T)",
+        "Capacity (T)",
+        "Corridor",
+        "Notes",
+    ]
+    ws.append(headers)
+
+    for schedule in schedules:
+        ws.append([
+            schedule.expected_arrival_dt,
+            schedule.odoo_po_name,
+            schedule.raw_material_type,
+            schedule.transporter_name,
+            schedule.driver_name,
+            schedule.driver_license_no,
+            schedule.dealer_number,
+            schedule.truck_plate,
+            schedule.origin_region,
+            schedule.schedule_ref,
+            schedule.status,
+            schedule.allocation_status,
+            schedule.estimated_qty_tonnes,
+            schedule.effective_capacity_tonnes,
+            schedule.corridor_name,
+            schedule.notes,
+        ])
+
+    header_fill = PatternFill("solid", fgColor="173158")
+    for cell in ws[1]:
+        cell.font = Font(color="FFFFFF", bold=True)
+        cell.fill = header_fill
+
+    ws.freeze_panes = "A2"
+    for column in ws.columns:
+        max_len = max(len(str(cell.value or "")) for cell in column)
+        ws.column_dimensions[get_column_letter(column[0].column)].width = min(max_len + 2, 32)
+
+    buffer = BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    filename = f"scheduled-trucks-{status}-{today}.xlsx"
+    return StreamingResponse(
+        buffer,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 # ── GET /api/schedules/{id} ───────────────────────────────────────────────────
@@ -264,5 +367,3 @@ async def _get_or_404(schedule_id: int, db: AsyncSession) -> TruckSchedule:
     if not schedule:
         raise HTTPException(status_code=404, detail=f"Schedule {schedule_id} not found")
     return schedule
-
-

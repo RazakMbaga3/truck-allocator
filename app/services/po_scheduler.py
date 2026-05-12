@@ -136,7 +136,7 @@ class POScheduler:
                 po_date=po_date,
                 expected_arrival_dt=eta,
                 status=TruckScheduleStatus.EXPECTED,
-                allocation_status=AllocationStatus.UNMATCHED,
+                allocation_status=AllocationStatus.UNALLOCATED,
             )
             schedule.return_route = return_route
 

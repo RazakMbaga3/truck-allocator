@@ -48,6 +48,7 @@ from app.services.route_calculator import (
     sort_stops_by_route_order,
 )
 from app.services.scoring import CandidateScore, score_candidate
+from app.services.freight_savings import compute_savings
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -319,6 +320,7 @@ class MatchingEngine:
         for seq, (order, sc, allocated_tonnes) in enumerate(items, start=1):
             item = ProposalItem(
                 proposal=proposal,
+                cement_order=order,
                 cement_order_id=order.id,
                 allocated_tonnes=allocated_tonnes,
                 allocated_bags=int(allocated_tonnes * 20),
@@ -353,6 +355,49 @@ class MatchingEngine:
         total_dev = sum(i.delivery_deviation_km for i in proposal.items)
         capacity = schedule.effective_capacity_tonnes
         util_pct = (total_tonnes / capacity * 100) if capacity > 0 else 0.0
+        total_fresh = 0.0
+        total_return = 0.0
+        total_holding = 0.0
+        total_savings = 0.0
+
+        for item in proposal.items:
+            order = item.cement_order
+            if not order:
+                continue
+
+            allocated_ratio = (
+                item.allocated_tonnes / order.quantity_tonnes
+                if order.quantity_tonnes > 0 else 1.0
+            )
+            fresh_freight = (
+                order.fresh_outbound_freight_tzs * allocated_ratio
+                if order.fresh_outbound_freight_tzs
+                else None
+            )
+            savings = compute_savings(
+                order_id=order.id,
+                order_ref=order.odoo_order_name,
+                distance_km=order.distance_from_plant_km or 0.0,
+                tonnes=item.allocated_tonnes,
+                corridor=order.delivery_corridor or schedule.corridor_name,
+                deadline_dt=order.deadline_dt,
+            )
+
+            if fresh_freight is not None:
+                return_freight = fresh_freight * 0.60
+                gross = fresh_freight - return_freight
+                net = gross + savings.holding_cost_saved_tzs
+                total_fresh += fresh_freight
+                total_return += return_freight
+                total_holding += savings.holding_cost_saved_tzs
+                total_savings += net
+                item.item_savings_tzs = round(net, 0)
+            else:
+                total_fresh += savings.fresh_freight_tzs
+                total_return += savings.return_freight_tzs
+                total_holding += savings.holding_cost_saved_tzs
+                total_savings += savings.net_saving_tzs
+                item.item_savings_tzs = round(savings.net_saving_tzs, 0)
 
         if total_tonnes > 0:
             composite = sum(
@@ -367,6 +412,10 @@ class MatchingEngine:
         proposal.capacity_utilization_pct = round(util_pct, 1)
         proposal.total_route_deviation_km = round(total_dev, 1)
         proposal.number_of_stops = len({i.cement_order.delivery_region for i in proposal.items})
+        proposal.total_fresh_freight_tzs = round(total_fresh, 0)
+        proposal.total_return_freight_tzs = round(total_return, 0)
+        proposal.holding_cost_tzs = round(total_holding, 0)
+        proposal.estimated_savings_tzs = round(total_savings, 0)
         proposal.composite_score = round(composite, 4)
 
     # ── Private: AI trigger ───────────────────────────────────────

@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Final Status — Truck Allocator</title>
+  <link rel="stylesheet" href="/static/css/nyati.css" />
+  <style>
+    .badge-waiting { display:inline-block; background:#fef3e8; color:#c05a00;
+                      padding:2px 10px; border-radius:4px; font-weight:700; font-size:0.78rem; }
+    .badge-loaded   { display:inline-block; background:#e6f9ef; color:#1a7a40;
+                      padding:2px 10px; border-radius:4px; font-weight:700; font-size:0.78rem; }
+    .badge-draft    { display:inline-block; background:#f3f4f6; color:#6b7280;
+                      padding:2px 10px; border-radius:4px; font-weight:700; font-size:0.78rem; }
+    .remark-text    { font-size:0.8rem; color:#92400e; font-style:italic; }
+    .remark-input-row { display:flex; gap:0.5rem; align-items:center; }
+    .remark-input-row input { flex:1; padding:0.3rem 0.5rem; border:1px solid #d1d5db;
+                               border-radius:5px; font-size:0.82rem; }
+    .expand-btn { background:none; border:none; cursor:pointer; font-size:0.78rem;
+                  color:#173158; text-decoration:underline; padding:0; }
+    .sub-table  { width:100%; font-size:0.8rem; border-collapse:collapse; margin:0.5rem 0; }
+    .sub-table th { background:#f9fafb; padding:4px 8px; text-align:left;
+                    font-weight:600; color:#6b7280; }
+    .sub-table td { padding:4px 8px; border-top:1px solid #f3f4f6; }
+    .filter-row { display:flex; gap:0.75rem; align-items:center; flex-wrap:wrap; margin-bottom:0.5rem; }
+    .filter-row select { padding:0.35rem 0.6rem; border:1px solid #d1d5db;
+                         border-radius:6px; font-size:0.85rem; }
+  </style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-logo"><span>TRUCK</span>&nbsp;<span class="accent">ALLOCATOR</span></div>
+  <nav class="topbar-nav">
+    <a href="/">Schedule</a>
+    <a href="/loadplan">Load Plan</a>
+    <a href="/final" class="active">Final Status</a>
+  </nav>
+  <div class="topbar-status">
+    <div class="live-dot"></div>
+    <span id="sse-status">Connecting…</span>
+  </div>
+</header>
+
+<main class="page">
+  <div class="page-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem">
+    <div>
+      <div class="page-title">Final Status</div>
+      <div class="page-subtitle">Load plans awaiting loading and completed truck loads</div>
+    </div>
+    <div style="display:flex;gap:0.5rem">
+      <button class="btn btn-outline btn-sm" onclick="exportExcel()">Export Excel</button>
+      <button class="btn btn-outline btn-sm" onclick="exportCSV()">Export CSV</button>
+      <button class="btn btn-primary btn-sm" onclick="loadData()">Refresh</button>
+    </div>
+  </div>
+
+  <!-- Filter -->
+  <div class="filter-row">
+    <label style="font-size:0.82rem;color:#6b7280">Status:</label>
+    <select id="filter-status" onchange="loadData()">
+      <option value="">All</option>
+      <option value="waiting_loading">Awaiting Loading</option>
+      <option value="loaded">Loaded</option>
+      <option value="draft">Draft</option>
+    </select>
+  </div>
+
+  <!-- KPI row -->
+  <div style="display:flex;gap:1rem;flex-wrap:wrap;margin-bottom:1.25rem">
+    <div class="card" style="flex:1;min-width:120px;padding:1rem 1.25rem">
+      <div style="font-size:0.72rem;color:#6b7280;margin-bottom:0.2rem">Total Trucks</div>
+      <div style="font-size:1.6rem;font-weight:700;color:#173158" id="kpi-total">—</div>
+    </div>
+    <div class="card" style="flex:1;min-width:120px;padding:1rem 1.25rem">
+      <div style="font-size:0.72rem;color:#6b7280;margin-bottom:0.2rem">Awaiting Loading</div>
+      <div style="font-size:1.6rem;font-weight:700;color:#c05a00" id="kpi-released">—</div>
+    </div>
+    <div class="card" style="flex:1;min-width:120px;padding:1rem 1.25rem">
+      <div style="font-size:0.72rem;color:#6b7280;margin-bottom:0.2rem">Loaded</div>
+      <div style="font-size:1.6rem;font-weight:700;color:#239557" id="kpi-loaded">—</div>
+    </div>
+    <div class="card" style="flex:1;min-width:120px;padding:1rem 1.25rem">
+      <div style="font-size:0.72rem;color:#6b7280;margin-bottom:0.2rem">Total MT</div>
+      <div style="font-size:1.6rem;font-weight:700;color:#173158" id="kpi-tonnes">—</div>
+    </div>
+  </div>
+
+  <!-- Table -->
+  <div class="card">
+    <div class="card-body">
+      <div id="loading" style="padding:2rem;text-align:center"><div class="spinner"></div></div>
+      <div class="data-table-wrapper">
+        <table class="data-table" id="main-table" style="display:none">
+          <thead>
+            <tr>
+              <th>PO Ref</th>
+              <th>Truck No.</th>
+              <th>Transporter</th>
+              <th>Driver</th>
+              <th>Location</th>
+              <th>Orders</th>
+              <th>Total MT</th>
+              <th>Status</th>
+              <th>Ready At</th>
+              <th>Loaded At</th>
+              <th>Remarks</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="main-tbody"></tbody>
+        </table>
+      </div>
+      <div id="main-empty" class="empty-state" style="display:none">
+        <div class="empty-state-icon">📋</div>
+        <div class="empty-state-title">No allocations yet</div>
+        <div>Load a truck plan on the Load Plan page to see it here.</div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<div id="toast-container"></div>
+
+<!-- Orders sub-table template (hidden) -->
+<template id="sub-table-tpl">
+  <tr class="sub-row" style="display:none">
+    <td colspan="12" style="padding:0 1rem 0.75rem">
+      <table class="sub-table">
+        <thead>
+          <tr>
+            <th>Customer</th><th>Order Ref</th><th>Order Date</th>
+            <th>Product</th><th>Qty (T)</th><th>Destination</th><th>Region</th>
+          </tr>
+        </thead>
+        <tbody class="sub-tbody"></tbody>
+      </table>
+    </td>
+  </tr>
+</template>
+
+<script src="/static/js/api.js"></script>
+<script src="/static/js/schedule-feed.js"></script>
+<script>
+let allAllocations = [];
+
+document.addEventListener('DOMContentLoaded', () => {
+  loadData();
+  const feed = new ScheduleFeed(handleSSE);
+  feed.connect();
+});
+
+// ── Load ────────────────────────────────────────────────────────────────────
+async function loadData() {
+  document.getElementById('loading').style.display    = 'block';
+  document.getElementById('main-table').style.display = 'none';
+  document.getElementById('main-empty').style.display = 'none';
+
+  const statusFilter = document.getElementById('filter-status').value;
+  const qs = statusFilter ? `?status=${statusFilter}` : '';
+
+  try {
+    allAllocations = await API.allocations(qs);
+    renderKPIs();
+    renderTable();
+  } catch (e) {
+    showToast('Failed to load: ' + e.message, 'orange');
+  } finally {
+    document.getElementById('loading').style.display = 'none';
+  }
+}
+
+// ── KPIs ─────────────────────────────────────────────────────────────────────
+function renderKPIs() {
+  const all      = allAllocations;
+  const released = all.filter(a => isWaitingLoadingStatus(a.status)).length;
+  const loaded   = all.filter(a => a.status === 'LOADED').length;
+  const tonnes   = all.reduce((n, a) => n + (a.total_tonnes || 0), 0);
+
+  document.getElementById('kpi-total').textContent   = all.length;
+  document.getElementById('kpi-released').textContent = released;
+  document.getElementById('kpi-loaded').textContent   = loaded;
+  document.getElementById('kpi-tonnes').textContent   = tonnes.toFixed(1) + ' T';
+}
+
+// ── Table ────────────────────────────────────────────────────────────────────
+function renderTable() {
+  if (!allAllocations.length) {
+    document.getElementById('main-empty').style.display = 'block';
+    return;
+  }
+
+  const tbody = document.getElementById('main-tbody');
+  tbody.innerHTML = '';
+
+  allAllocations.forEach(a => {
+    const na = '—';
+    const mainRow = document.createElement('tr');
+    mainRow.id = `alloc-row-${a.id}`;
+    mainRow.innerHTML = `
+      <td class="mono" style="font-size:0.8rem">${a.odoo_po_name || na}</td>
+      <td class="mono">${a.truck_plate || na}</td>
+      <td>${a.transporter_name || na}</td>
+      <td>${a.driver_name || na}</td>
+      <td>${a.origin_region || na}</td>
+      <td>
+        <button class="expand-btn" onclick="toggleOrders(${a.id})" id="expand-btn-${a.id}">
+          ${a.item_count || 0} order(s) ▸
+        </button>
+      </td>
+      <td><strong>${(a.total_tonnes || 0).toFixed(1)} T</strong></td>
+      <td>${statusBadge(a.status)}</td>
+      <td style="font-size:0.8rem">${a.released_at ? fmtDateShort(a.released_at) : na}</td>
+      <td style="font-size:0.8rem">${a.loaded_at   ? fmtDateShort(a.loaded_at)   : na}</td>
+      <td>
+        <div id="remark-display-${a.id}">
+          ${a.remarks
+            ? `<span class="remark-text">${a.remarks}</span>`
+            : `<button class="expand-btn" onclick="showRemarkForm(${a.id})">+ Add</button>`}
+        </div>
+        <div id="remark-form-${a.id}" class="remark-input-row" style="display:none">
+          <input type="text" id="remark-input-${a.id}" placeholder="Enter remark…"
+                 value="${a.remarks || ''}" />
+          <button class="btn btn-sm btn-primary" onclick="saveRemark(${a.id})">Save</button>
+          <button class="btn btn-sm btn-outline" onclick="hideRemarkForm(${a.id})">✕</button>
+        </div>
+      </td>
+      <td style="white-space:nowrap">
+        <a href="/loadplan?schedule=${a.schedule_id}" class="btn btn-outline btn-sm">Edit</a>
+        ${isWaitingLoadingStatus(a.status)
+          ? ` <button class="btn btn-green btn-sm" onclick="markLoaded(${a.id})">Mark Loaded</button>
+              <button class="btn btn-sm" style="color:#dc2626;border:1px solid #dc2626;border-radius:6px;padding:3px 8px;background:none;cursor:pointer;font-size:0.78rem" onclick="revertToDraft(${a.id})">↩ Draft</button>`
+          : a.status === 'LOADED'
+            ? ` <button class="btn btn-sm" style="color:#dc2626;border:1px solid #dc2626;border-radius:6px;padding:3px 8px;background:none;cursor:pointer;font-size:0.78rem" onclick="revertToDraft(${a.id})">↩ Draft</button>`
+            : ''}
+      </td>`;
+    tbody.appendChild(mainRow);
+
+    // Sub-row for orders
+    const subRow = document.createElement('tr');
+    subRow.id = `sub-row-${a.id}`;
+    subRow.style.display = 'none';
+    subRow.innerHTML = `<td colspan="12" style="padding:0 1rem 0.75rem;background:#f9fafb">
+      <table class="sub-table">
+        <thead><tr>
+          <th>Customer</th><th>Order Ref</th><th>Order Date</th>
+          <th>Product</th><th>Qty (T)</th><th>Destination</th><th>Region</th>
+        </tr></thead>
+        <tbody>${buildSubRows(a)}</tbody>
+      </table>
+    </td>`;
+    tbody.appendChild(subRow);
+  });
+
+  document.getElementById('main-table').style.display = 'table';
+}
+
+function buildSubRows(a) {
+  if (!a.item_count) return '<tr><td colspan="7" style="color:#9ca3af;padding:6px 8px">No orders.</td></tr>';
+  // Items may not be in list response; fetch on expand
+  return '<tr><td colspan="7" style="color:#9ca3af;padding:6px 8px">Loading…</td></tr>';
+}
+
+async function toggleOrders(id) {
+  const subRow = document.getElementById(`sub-row-${id}`);
+  const btn    = document.getElementById(`expand-btn-${id}`);
+  const isOpen = subRow.style.display !== 'none';
+
+  if (isOpen) {
+    subRow.style.display = 'none';
+    const a = allAllocations.find(x => x.id === id);
+    btn.textContent = `${a ? a.item_count : 0} order(s) ▸`;
+    return;
+  }
+
+  // Fetch full allocation to get items
+  try {
+    const full = await API.allocation(id);
+    const tbody = subRow.querySelector('tbody');
+    tbody.innerHTML = (full.items || []).map(item => `
+      <tr>
+        <td>${item.customer_name}</td>
+        <td class="mono">${item.order_ref}</td>
+        <td>${item.order_date || '—'}</td>
+        <td>${item.product}</td>
+        <td>${item.quantity_tonnes.toFixed(1)}</td>
+        <td>${item.destination_location}</td>
+        <td>${item.region}</td>
+      </tr>`).join('') || '<tr><td colspan="7">No orders.</td></tr>';
+    subRow.style.display = '';
+    btn.textContent = `${full.items.length} order(s) ▾`;
+  } catch (e) {
+    showToast('Failed to load orders: ' + e.message, 'orange');
+  }
+}
+
+// ── Actions ──────────────────────────────────────────────────────────────────
+async function markLoaded(id) {
+  if (!confirm('Mark this truck as LOADED?\n\nThis confirms physical cement loading is complete.')) return;
+  try {
+    await API.markLoaded(id);
+    showToast('Marked as Loaded.', 'green');
+    loadData();
+  } catch (e) {
+    showToast('Failed: ' + e.message, 'orange');
+  }
+}
+
+async function revertToDraft(id) {
+  if (!confirm('Revert this allocation back to Draft?\n\nThe truck will return to the Schedule page for re-allocation.')) return;
+  try {
+    await API.revertAllocation(id);
+    showToast('Reverted to Draft.', 'green');
+    loadData();
+  } catch (e) {
+    showToast('Failed to revert: ' + e.message, 'orange');
+  }
+}
+
+function showRemarkForm(id) {
+  document.getElementById(`remark-display-${id}`).style.display = 'none';
+  document.getElementById(`remark-form-${id}`).style.display    = 'flex';
+  document.getElementById(`remark-input-${id}`).focus();
+}
+
+function hideRemarkForm(id) {
+  document.getElementById(`remark-form-${id}`).style.display    = 'none';
+  document.getElementById(`remark-display-${id}`).style.display = 'block';
+}
+
+async function saveRemark(id) {
+  const text = document.getElementById(`remark-input-${id}`).value.trim();
+  if (!text) { showToast('Remark cannot be empty.', 'orange'); return; }
+  try {
+    await API.setRemarks(id, text);
+    showToast('Remark saved.', 'green');
+    loadData();
+  } catch (e) {
+    showToast('Failed: ' + e.message, 'orange');
+  }
+}
+
+// ── Export CSV ───────────────────────────────────────────────────────────────
+function exportCSV() {
+  const headers = ['PO Ref','Truck No.','Transporter','Driver','Location',
+                   'Orders','Total MT','Status','Ready At','Loaded At','Remarks'];
+  const rows = allAllocations.map(a => [
+    a.odoo_po_name || '',
+    a.truck_plate  || '',
+    a.transporter_name || '',
+    a.driver_name  || '',
+    a.origin_region || '',
+    a.item_count   || 0,
+    (a.total_tonnes || 0).toFixed(1),
+    statusLabel(a.status),
+    a.released_at ? fmtDateShort(a.released_at) : '',
+    a.loaded_at   ? fmtDateShort(a.loaded_at)   : '',
+    a.remarks      || '',
+  ].map(v => `"${String(v).replace(/"/g,'""')}"`).join(','));
+
+  const csv  = [headers.join(','), ...rows].join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url;
+  a.download = `final-status-${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ── Export Excel ──────────────────────────────────────────────────────────────
+async function exportExcel() {
+  const statusFilter = document.getElementById('filter-status')?.value || '';
+  const url = '/api/allocations/export/final-status' + 
+              (statusFilter ? `?status=${encodeURIComponent(statusFilter)}` : '');
+  try {
+    const response = await fetch(url);
+    if (!response.ok) {
+      const error = await response.text();
+      showToast(`Export failed: ${error}`, 'red');
+      return;
+    }
+    const blob = await response.blob();
+    const downloadUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = downloadUrl;
+    a.download = `final-status-${new Date().toISOString().slice(0,10)}.xlsx`;
+    a.click();
+    URL.revokeObjectURL(downloadUrl);
+    showToast('Excel file exported successfully', 'green');
+  } catch (e) {
+    showToast('Export error: ' + e.message, 'red');
+  }
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+function statusBadge(s) {
+  if (isWaitingLoadingStatus(s)) return '<span class="badge-waiting">AWAITING LOADING</span>';
+  if (s === 'LOADED')   return '<span class="badge-loaded">LOADED</span>';
+  return `<span class="badge-draft">${s}</span>`;
+}
+
+function statusLabel(s) {
+  if (isWaitingLoadingStatus(s)) return 'AWAITING LOADING';
+  return s || '';
+}
+
+function isWaitingLoadingStatus(s) {
+  return s === 'WAITING_LOADING' || s === 'RELEASED';
+}
+
+function fmtDateShort(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return d.toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'2-digit' })
+    + ' ' + d.toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit' });
+}
+
+function handleSSE(type) {
+  if (['truck_allocated','truck_dispatched'].includes(type)) loadData();
+}
+</script>
+</body>
+</html>
