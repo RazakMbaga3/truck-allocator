@@ -40,12 +40,26 @@ const API = {
   },
 
   // ── Schedules ──────────────────────────────────────────────────────────────
-  schedules:  (params = '') => API.get(`/api/schedules${params}`),
-  schedule:   (id)          => API.get(`/api/schedules/${id}`),
-  syncOrders: ()            => API.post('/api/orders/sync', {}),
-  markArrived:(id)          => API.patch(`/api/schedules/${id}/arrived`, {}),
+  schedules:    (params = '') => API.get(`/api/schedules${params}`),
+  schedule:     (id)          => API.get(`/api/schedules/${id}`),
+  syncOrders:   ()            => API.post('/api/orders/sync', {}),
+  markArrived:  (id)          => API.patch(`/api/schedules/${id}/arrived`, {}),
+  rematch:      (id)          => API.post(`/api/schedules/${id}/rematch`, {}),
+  odooConfig:   ()            => API.get('/api/schedules/odoo-config'),
+  orderStatus:  ()            => API.get('/api/schedules/order-status'),
+  liveStatus:       (days = 7)              => API.get(`/api/orders/live-status?days=${days}`),
+  liveStatusExport: (days = 7, status = '') => `/api/orders/live-status/export?days=${days}${status ? '&status='+encodeURIComponent(status) : ''}`,
+  finalStatus:      (days = 30)             => API.get(`/api/orders/final-status?days=${days}`),
 
-  // ── Allocations (new dispatcher workflow) ─────────────────────────────────
+  // ── Proposals (AI matching workflow) ──────────────────────────────────────
+  proposals:       (params = '') => API.get(`/api/proposals${params}`),
+  proposal:        (id)          => API.get(`/api/proposals/${id}`),
+  confirmProposal: (id, by = 'dispatcher') =>
+    API.patch(`/api/proposals/${id}/confirm`, { confirmed_by: by }),
+  rejectProposal:  (id, reason = '') =>
+    API.patch(`/api/proposals/${id}/reject`, { reject_reason: reason }),
+
+  // ── Allocations (dispatcher workflow) ─────────────────────────────────────
   allocations:       (params = '')       => API.get(`/api/allocations${params}`),
   allocation:        (id)                => API.get(`/api/allocations/${id}`),
   createAllocation:  (body)              => API.post('/api/allocations', body),
@@ -56,7 +70,7 @@ const API = {
   releaseAllocation: (id, by = 'dispatcher') =>
     API.loadAllocation(id, by),
   markLoaded:        (id)                => API.patch(`/api/allocations/${id}/loaded`, {}),
-  revertAllocation:  (id)               => API.patch(`/api/allocations/${id}/revert`, {}),
+  revertAllocation:  (id)                => API.patch(`/api/allocations/${id}/revert`, {}),
   setRemarks:        (id, text)          => API.patch(`/api/allocations/${id}/remarks`, { remarks: text }),
 
   // ── Misc ──────────────────────────────────────────────────────────────────
@@ -115,4 +129,75 @@ function showToast(message, type = '') {
   toast.textContent = message;
   container.appendChild(toast);
   setTimeout(() => toast.remove(), 4000);
+}
+
+// ── Branded confirm dialog ─────────────────────────────────────────────────────
+// Returns Promise<boolean>. Drop-in replacement for window.confirm().
+//
+// Usage:
+//   if (!await showDialog({ title, message, confirmText, variant })) return;
+//
+// variant: 'green' | 'danger' | 'navy' | 'orange'  (default: 'navy')
+
+function showDialog({
+  title        = 'Confirm',
+  message      = '',
+  confirmText  = 'Confirm',
+  cancelText   = 'Cancel',
+  variant      = 'navy',
+} = {}) {
+  return new Promise(resolve => {
+    const ICONS = {
+      green:  '✓',
+      danger: '!',
+      navy:   '?',
+      orange: '⚠',
+    };
+
+    const overlay = document.createElement('div');
+    overlay.className = 'dialog-overlay';
+    overlay.setAttribute('role', 'dialog');
+    overlay.setAttribute('aria-modal', 'true');
+
+    // Build message HTML — support \n as paragraph breaks
+    const paragraphs = String(message).split('\n').filter(Boolean)
+      .map(p => `<p>${p}</p>`).join('');
+
+    overlay.innerHTML = `
+      <div class="dialog-box">
+        <div class="dialog-header">
+          <div class="dialog-icon ${variant}">${ICONS[variant] || '?'}</div>
+          <div class="dialog-title">${title}</div>
+        </div>
+        ${paragraphs ? `<div class="dialog-body">${paragraphs}</div>` : ''}
+        <div class="dialog-footer">
+          <button class="btn btn-outline btn-sm" id="dlg-cancel">${cancelText}</button>
+          <button class="btn btn-${variant === 'green' ? 'green' : variant === 'danger' ? 'danger' : variant === 'orange' ? 'orange' : 'primary'} btn-sm" id="dlg-confirm">${confirmText}</button>
+        </div>
+      </div>`;
+
+    const close = (result) => {
+      overlay.style.opacity = '0';
+      overlay.style.transition = 'opacity 0.15s';
+      setTimeout(() => overlay.remove(), 150);
+      resolve(result);
+    };
+
+    overlay.querySelector('#dlg-confirm').addEventListener('click', () => close(true));
+    overlay.querySelector('#dlg-cancel').addEventListener('click',  () => close(false));
+
+    // Close on backdrop click
+    overlay.addEventListener('click', e => { if (e.target === overlay) close(false); });
+
+    // Close on Escape
+    const onKey = (e) => {
+      if (e.key === 'Escape') { document.removeEventListener('keydown', onKey); close(false); }
+    };
+    document.addEventListener('keydown', onKey);
+
+    document.body.appendChild(overlay);
+
+    // Auto-focus confirm button
+    setTimeout(() => overlay.querySelector('#dlg-confirm')?.focus(), 50);
+  });
 }

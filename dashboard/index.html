@@ -6,8 +6,9 @@
   <title>Truck Allocator — Nyati Cement</title>
   <link rel="stylesheet" href="/static/css/nyati.css" />
   <style>
-    .data-table th, .data-table td { white-space: nowrap; }
-    .mono { font-family: monospace; font-size: 0.85rem; }
+    .data-table th, .data-table td { white-space: nowrap; font-size: 0.8rem; padding: 5px 8px; }
+    .data-table th { font-size: 0.72rem; padding: 5px 8px; }
+    .mono { font-family: monospace; font-size: 0.82rem; }
     .pill { display:inline-block; padding:2px 8px; border-radius:999px; font-size:0.75rem; font-weight:600; }
     .pill-expected  { background:#e8f4fd; color:#1a6fa8; }
     .pill-arrived   { background:#e6f9ef; color:#1a7a40; }
@@ -37,7 +38,7 @@
   </div>
   <nav class="topbar-nav">
     <a href="/" class="active">Schedule</a>
-    <a href="/loadplan">Load Plan</a>
+    <a href="/order-status">Order Status</a>
     <a href="/final">Final Status</a>
   </nav>
   <div class="topbar-status">
@@ -94,12 +95,12 @@
         <table class="data-table" id="main-table" style="display:none;width:100%">
           <thead>
             <tr>
-              <th>ETA</th>
               <th>PO Ref</th>
               <th>Material</th>
               <th>Transporter</th>
-              <th>Driver Name</th>
-              <th>License No.</th>
+              <th>Driver</th>
+              <th>Phone</th>
+              <th>Licence</th>
               <th>Dealer No.</th>
               <th>Truck No.</th>
               <th>Location</th>
@@ -128,12 +129,12 @@
           <table class="data-table" id="allocated-table" style="width:100%">
             <thead>
               <tr>
-                <th>ETA</th>
                 <th>PO Ref</th>
                 <th>Material</th>
                 <th>Transporter</th>
-                <th>Driver Name</th>
-                <th>License No.</th>
+                <th>Driver</th>
+                <th>Phone</th>
+                <th>Licence</th>
                 <th>Dealer No.</th>
                 <th>Truck No.</th>
                 <th>Location</th>
@@ -153,6 +154,24 @@
 <script src="/static/js/api.js"></script>
 <script src="/static/js/schedule-feed.js"></script>
 <script>
+async function allocateViaOdoo(scheduleId) {
+  // Open blank window immediately (in click handler) to avoid popup blocker,
+  // then navigate it to the Odoo URL once the server resolves the IDs.
+  const win = window.open('', '_blank');
+  try {
+    const data = await API.get(`/api/schedules/${scheduleId}/odoo-url`);
+    win.location.href = data.url;
+    const label = data.truck_plate || `#${scheduleId}`;
+    const hint  = (!data.vehicle_found && !data.driver_found)
+      ? ' (truck/driver not in Odoo fleet — fill manually)'
+      : (!data.vehicle_found ? ' (vehicle not in fleet — fill Truck No manually)' : '');
+    showToast(`Opening Odoo for ${label}${hint}`, data.vehicle_found ? 'green' : 'orange');
+  } catch (e) {
+    win.close();
+    showToast('Error: ' + e.message, 'orange');
+  }
+}
+
 // ── Init ───────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
   loadKPIs();
@@ -208,7 +227,6 @@ async function loadSchedules() {
 // ── Render helpers ─────────────────────────────────────────────────────────
 function truckRow(s, showAction, draftBySchedule = new Map()) {
   const na          = '<span class="na">—</span>';
-  const eta         = s.expected_arrival_dt ? fmtDate(s.expected_arrival_dt) : na;
   const poRef       = s.odoo_po_name ? `<span class="mono">${s.odoo_po_name}</span>` : na;
   const material    = s.raw_material_type || na;
   const transporter = s.transporter_name || na;
@@ -218,21 +236,19 @@ function truckRow(s, showAction, draftBySchedule = new Map()) {
   const plate       = s.truck_plate      ? `<span class="mono">${s.truck_plate}</span>` : na;
   const location    = s.origin_region    || na;
   const allocStatus = fmtAllocStatus(s.allocation_status);
-  const draftAlloc  = draftBySchedule.get(s.id);
   const action      = showAction
-    ? draftAlloc
-      ? `<a href="/loadplan?schedule=${s.id}" class="btn btn-outline btn-sm">Continue Draft</a>`
-      : `<a href="/loadplan?schedule=${s.id}" class="btn btn-primary btn-sm">Allocate →</a>`
+    ? `<button class="btn btn-primary btn-sm" onclick="allocateViaOdoo(${s.id})">Allocate →</button>`
     : allocStatus;
 
+  const phone = s.driver_phone || na;
   return `<tr id="sched-row-${s.id}">
-    <td><strong>${eta}</strong></td>
     <td>${poRef}</td>
     <td>${material}</td>
     <td>${transporter}</td>
     <td>${driver}</td>
-    <td class="mono" style="font-size:0.8rem">${license}</td>
-    <td class="mono" style="font-size:0.8rem">${dealer}</td>
+    <td style="font-size:0.78rem;color:#374151">${phone}</td>
+    <td class="mono">${license}</td>
+    <td class="mono">${dealer}</td>
     <td>${plate}</td>
     <td><strong>${location}</strong></td>
     <td>${action}</td>

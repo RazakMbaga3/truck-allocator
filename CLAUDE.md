@@ -562,16 +562,14 @@ C:\Users\USER\return trucks optimization\
 │   └── alembic/                           # DB migrations
 │
 ├── dashboard/
-│   ├── index.html                         # Live schedule (SSE)
-│   ├── proposals.html                     # 3-variant confirm screen
-│   ├── confirmed.html                     # Confirmed allocations
+│   ├── index.html                         # Schedule — inbound trucks, Allocate → Odoo
+│   ├── order-status.html                  # Order Status — live SOs from Odoo
+│   ├── final.html                         # Final Status — Dispatched/Released outcomes
 │   └── static/
 │       ├── css/nyati.css                  # Brand: #173158 navy / #F49545 orange
 │       └── js/
 │           ├── schedule-feed.js           # SSE client (live truck list)
-│           ├── api.js
-│           ├── proposals.js
-│           └── savings.js
+│           └── api.js                     # Shared API client
 │
 ├── scripts/
 │   ├── seed_routes.py                     # From Routes template + location master

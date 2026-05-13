@@ -3,15 +3,16 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Final Status — Nyati Cement</title>
+  <title>Order Status — Nyati Cement</title>
   <link rel="stylesheet" href="/static/css/nyati.css" />
   <style>
     .data-table th, .data-table td { white-space: nowrap; font-size: 0.8rem; padding: 5px 8px; }
     .data-table th { font-size: 0.72rem; padding: 5px 8px; }
     .mono { font-family: monospace; font-size: 0.82rem; }
     .pill { display:inline-block; padding:2px 10px; border-radius:999px; font-size:0.75rem; font-weight:600; }
-    .pill-dispatched { background:#173158; color:#fff; }
-    .pill-released   { background:#fef3c7; color:#92400e; }
+    .pill-pending    { background:#fef3c7; color:#92400e; }
+    .pill-dispatched { background:#d1fae5; color:#065f46; }
+    .pill-cancelled  { background:#fee2e2; color:#991b1b; }
     .kpi-row { display:flex; gap:1rem; margin-bottom:1.5rem; flex-wrap:wrap; }
     .kpi-card { flex:1; min-width:130px; background:#fff; border:1px solid #e5e7eb;
                 border-radius:8px; padding:1rem 1.25rem; }
@@ -26,8 +27,7 @@
     .filter-bar select, .filter-bar input[type=number] {
       padding:0.3rem 0.5rem; border:1px solid #d1d5db; border-radius:6px; font-size:0.85rem; }
     .filter-bar label { font-size:0.82rem; color:#6b7280; }
-.remark-cell { max-width:200px; overflow:hidden; text-overflow:ellipsis;
-                   font-size:0.8rem; color:#6b7280; font-style:italic; }
+    .customer-cell { max-width:200px; overflow:hidden; text-overflow:ellipsis; }
   </style>
 </head>
 <body>
@@ -38,8 +38,8 @@
   </div>
   <nav class="topbar-nav">
     <a href="/">Schedule</a>
-    <a href="/order-status">Order Status</a>
-    <a href="/final" class="active">Final Status</a>
+    <a href="/order-status" class="active">Order Status</a>
+    <a href="/final">Final Status</a>
   </nav>
   <div class="topbar-status">
     <div class="live-dot"></div>
@@ -50,32 +50,32 @@
 <main class="page">
   <div class="page-header">
     <div>
-      <div class="page-title">Final Status</div>
-      <div class="page-subtitle">Allocation outcomes — Dispatched (loaded) and Released (not loaded) trucks</div>
+      <div class="page-title">Order Status</div>
+      <div class="page-subtitle">Sale orders created in Odoo — Kimbiji Plant</div>
     </div>
   </div>
 
   <!-- KPI row -->
   <div class="kpi-row">
     <div class="kpi-card">
-      <div class="kpi-label">Total Outcomes</div>
+      <div class="kpi-label">Total Orders</div>
       <div class="kpi-value" id="kpi-total">—</div>
-      <div class="kpi-sub" id="kpi-period">last 30 days</div>
+      <div class="kpi-sub" id="kpi-period">last 7 days</div>
     </div>
     <div class="kpi-card">
-      <div class="kpi-label">Dispatched ✓</div>
-      <div class="kpi-value" id="kpi-disp">—</div>
-      <div class="kpi-sub">truck loaded with cement order</div>
+      <div class="kpi-label">Pending</div>
+      <div class="kpi-value orange" id="kpi-pend">—</div>
+      <div class="kpi-sub">awaiting dispatch</div>
     </div>
     <div class="kpi-card">
-      <div class="kpi-label">Released ⊘</div>
-      <div class="kpi-value orange" id="kpi-rel">—</div>
-      <div class="kpi-sub">truck not allocated to cement order</div>
+      <div class="kpi-label">Dispatched</div>
+      <div class="kpi-value green" id="kpi-disp">—</div>
+      <div class="kpi-sub">truck loaded</div>
     </div>
     <div class="kpi-card">
-      <div class="kpi-label">Total Qty (MT)</div>
+      <div class="kpi-label">Qty Dispatched (MT)</div>
       <div class="kpi-value" id="kpi-qty">—</div>
-      <div class="kpi-sub">dispatched cement only</div>
+      <div class="kpi-sub">metric tonnes</div>
     </div>
   </div>
 
@@ -86,13 +86,13 @@
       <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
         <div class="filter-bar">
           <label>Last</label>
-          <input type="number" id="days-input" value="30" min="1" max="90" style="width:60px"
+          <input type="number" id="days-input" value="7" min="1" max="90" style="width:60px"
                  onchange="load()">
           <label>days</label>
           <select id="status-filter" onchange="renderTable()">
             <option value="">All</option>
+            <option value="Pending">Pending</option>
             <option value="Dispatched">Dispatched</option>
-            <option value="Released">Released</option>
           </select>
         </div>
         <button class="btn btn-outline btn-sm" onclick="exportExcel()">Export Excel</button>
@@ -105,16 +105,16 @@
         <table class="data-table" id="main-table" style="display:none;width:100%">
           <thead>
             <tr>
-              <th>PO Ref</th>
               <th>SO No.</th>
+              <th>Date</th>
+              <th>Customer</th>
+              <th>Location</th>
               <th>Transporter</th>
               <th>Driver</th>
-              <th>Location</th>
+              <th>Phone</th>
+              <th>Licence</th>
               <th>Qty (MT)</th>
-              <th>Invoice No.</th>
-              <th>Invoice Date</th>
               <th>Status</th>
-              <th>Remark</th>
             </tr>
           </thead>
           <tbody id="main-tbody"></tbody>
@@ -123,7 +123,7 @@
       <div id="main-empty" class="empty-state" style="display:none">
         <div style="font-size:3rem">📋</div>
         <div style="font-size:1.1rem;font-weight:600;color:#6b7280;margin:0.5rem 0">No orders found</div>
-        <div>No confirmed sale orders in the selected period.</div>
+        <div>No sale orders with truck details in the selected period.</div>
       </div>
     </div>
   </div>
@@ -140,14 +140,14 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 async function load() {
-  const days = parseInt(document.getElementById('days-input').value) || 30;
+  const days = parseInt(document.getElementById('days-input').value) || 7;
   document.getElementById('loading').style.display = 'block';
   document.getElementById('main-table').style.display = 'none';
   document.getElementById('main-empty').style.display = 'none';
   document.getElementById('kpi-period').textContent = `last ${days} day${days !== 1 ? 's' : ''}`;
 
   try {
-    _rows = await API.finalStatus(days);
+    _rows = await API.liveStatus(days);
     renderKPIs();
     renderTable();
     document.getElementById('last-sync').textContent =
@@ -159,18 +159,18 @@ async function load() {
 }
 
 function renderKPIs() {
+  const pend = _rows.filter(r => r.status === 'Pending').length;
   const disp = _rows.filter(r => r.status === 'Dispatched').length;
-  const rel  = _rows.filter(r => r.status === 'Released').length;
-  const qty  = _rows.reduce((s, r) => s + (r.qty_mt || 0), 0);
+  const qty  = _rows.filter(r => r.status === 'Dispatched').reduce((s, r) => s + (r.qty_mt || 0), 0);
   document.getElementById('kpi-total').textContent = _rows.length;
+  document.getElementById('kpi-pend').textContent  = pend;
   document.getElementById('kpi-disp').textContent  = disp;
-  document.getElementById('kpi-rel').textContent   = rel;
   document.getElementById('kpi-qty').textContent   = qty.toFixed(1);
 }
 
 function renderTable() {
   document.getElementById('loading').style.display = 'none';
-  const filter = document.getElementById('status-filter').value;
+  const filter  = document.getElementById('status-filter').value;
   const visible = filter ? _rows.filter(r => r.status === filter) : _rows;
 
   if (!visible.length) {
@@ -185,37 +185,37 @@ function renderTable() {
 
 function rowHtml(r) {
   const na = '<span class="na">—</span>';
+  const soDate = r.date_order ? fmtDate(r.date_order) : na;
   return `<tr>
-    <td class="mono" style="font-size:0.8rem">${r.po_ref || na}</td>
     <td><span class="mono">${r.so_name || na}</span></td>
+    <td>${soDate}</td>
+    <td class="customer-cell" title="${r.customer || ''}">${r.customer || na}</td>
+    <td>${r.location || na}</td>
     <td>${r.transporter || na}</td>
     <td>${r.driver || na}</td>
-    <td>${r.location || na}</td>
+    <td style="font-size:0.78rem;color:#374151">${r.driver_phone || na}</td>
+    <td class="mono">${r.license || na}</td>
     <td style="text-align:right"><strong>${r.qty_mt ? r.qty_mt.toFixed(1) : na}</strong></td>
-    <td class="mono" style="font-size:0.8rem">${r.invoice_no || na}</td>
-    <td style="font-size:0.85rem">${r.invoice_date ? fmtDate(r.invoice_date) : na}</td>
     <td>${statusPill(r.status)}</td>
-    <td class="remark-cell" title="${r.remark || ''}">${r.remark || na}</td>
   </tr>`;
 }
 
 function statusPill(s) {
-  const cls = s === 'Released' ? 'pill-released' : 'pill-dispatched';
+  const cls = s === 'Dispatched' ? 'pill-dispatched'
+            : s === 'Cancelled'  ? 'pill-cancelled'
+            : 'pill-pending';
   return `<span class="pill ${cls}">${s}</span>`;
 }
 
 function fmtDate(dt) {
   if (!dt) return '—';
-  const d = new Date(dt);
-  return d.toLocaleDateString('en-GB', {day:'2-digit', month:'short', year:'numeric'});
+  return new Date(dt).toLocaleDateString('en-GB', {day:'2-digit', month:'short', year:'numeric'});
 }
 
 function exportExcel() {
-  const days = parseInt(document.getElementById('days-input').value) || 30;
-  const filter = document.getElementById('status-filter').value;
-  let url = `/api/orders/final-status/export?days=${days}`;
-  if (filter) url += `&status=${encodeURIComponent(filter)}`;
-  window.location.href = url;
+  const days   = parseInt(document.getElementById('days-input').value) || 7;
+  const status = document.getElementById('status-filter').value;
+  window.location.href = API.liveStatusExport(days, status);
 }
 </script>
 </body>

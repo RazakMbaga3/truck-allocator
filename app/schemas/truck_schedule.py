@@ -81,6 +81,7 @@ class TruckScheduleListItem(BaseModel):
     truck_plate: str | None
     driver_name: str | None
     driver_license_no: str | None
+    driver_phone: str | None
     dealer_number: str | None
     transporter_name: str | None
     corridor_name: str | None

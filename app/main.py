@@ -2,12 +2,16 @@
 app/main.py — FastAPI application factory.
 
 Mounts:
-  /api/schedules  — TruckSchedule API (incl. SSE /api/schedules/feed)
-  /api/proposals  — AllocationProposal API
-  /api/orders     — CementOrder API
-  /api/health     — Odoo + DB connectivity check
-  /               — Dashboard HTML (static files)
-  /docs           — Swagger UI (dev only)
+  /api/schedules   — TruckSchedule API (incl. SSE /api/schedules/feed)
+  /api/proposals   — AllocationProposal API
+  /api/orders      — CementOrder API (incl. live-status, final-status, exports)
+  /api/allocations — TruckAllocation API
+  /api/savings     — Savings KPI API
+  /api/health      — Odoo + DB connectivity check
+  /                — Schedule dashboard (index.html)
+  /order-status    — Order Status dashboard (order-status.html)
+  /final           — Final Status dashboard (final.html)
+  /docs            — Swagger UI
 """
 
 from __future__ import annotations
@@ -159,13 +163,13 @@ def create_app() -> FastAPI:
         async def serve_dashboard():
             return FileResponse(os.path.join(dashboard_dir, "index.html"))
 
-        @app.get("/loadplan", include_in_schema=False)
-        async def serve_loadplan():
-            return FileResponse(os.path.join(dashboard_dir, "dispatch.html"))
-
         @app.get("/final", include_in_schema=False)
         async def serve_final():
             return FileResponse(os.path.join(dashboard_dir, "final.html"))
+
+        @app.get("/order-status", include_in_schema=False)
+        async def serve_order_status():
+            return FileResponse(os.path.join(dashboard_dir, "order-status.html"))
 
     return app
 

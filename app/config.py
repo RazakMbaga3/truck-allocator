@@ -26,6 +26,17 @@ class Settings(BaseSettings):
     odoo_location_stock_id: int = 8
     odoo_location_customer_id: int = 5
 
+    # ── Odoo SO creation redirect (confirmed from URL + inspect_so_fields.py) ──
+    odoo_so_action_id: int = 743        # action=743 confirmed from erp.lakecement.co.tz URL
+    odoo_so_menu_id: int = 182          # menu_id=182
+    odoo_so_cids: int = 1               # cids=1
+    # Trip Details tab field names — confirmed via inspect_so_fields.py 2026-05-13
+    odoo_so_field_truck_no: str = "vehicle"
+    odoo_so_field_trailer_no: str = "trailer"
+    odoo_so_field_driver_name: str = "custom_driver_name"
+    odoo_so_field_driver_phone: str = "driver_mobile"
+    odoo_so_field_driver_license: str = "driver_license"
+
     # ── Anthropic AI ─────────────────────────────────────────────
     anthropic_api_key: str = ""
 

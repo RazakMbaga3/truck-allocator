@@ -189,6 +189,135 @@ async def export_schedules_excel(
     )
 
 
+# ── GET /api/schedules/odoo-config ───────────────────────────────────────────
+
+@router.get("/odoo-config")
+async def get_odoo_config():
+    """
+    Returns Odoo SO creation URL config for client-side URL building.
+    The Allocate button uses this to open a pre-filled Odoo SO form.
+    """
+    from app.config import get_settings
+    s = get_settings()
+    return {
+        "odoo_url": s.odoo_url,
+        "so_action_id": s.odoo_so_action_id,
+        "so_menu_id": s.odoo_so_menu_id,
+        "cids": s.odoo_so_cids,
+        "fields": {
+            "truck_no":       s.odoo_so_field_truck_no,
+            "trailer_no":     s.odoo_so_field_trailer_no,
+            "driver_name":    s.odoo_so_field_driver_name,
+            "driver_phone":   s.odoo_so_field_driver_phone,
+            "driver_license": s.odoo_so_field_driver_license,
+        },
+    }
+
+
+# ── GET /api/schedules/{id}/odoo-url ─────────────────────────────────────────
+
+@router.get("/{schedule_id}/odoo-url")
+async def get_odoo_url(schedule_id: int, db: AsyncSession = Depends(get_db)):
+    """
+    Build the Odoo SO creation URL for a specific truck schedule.
+    Looks up fleet.vehicle by plate and driver.master.custom by license
+    so the many2one fields are pre-filled (which triggers onchange to fill
+    the readonly char fields like Truck No, Driver Name, etc.).
+    """
+    import asyncio as _aio
+    from app.config import get_settings
+    from app.services.odoo_sync import OdooClient
+
+    schedule = await _get_or_404(schedule_id, db)
+    s = get_settings()
+    client = OdooClient()
+
+    vehicle_odoo_id: int | None = None
+    driver_odoo_id: int | None = None
+
+    try:
+        uid = await _aio.to_thread(client._uid_or_auth)
+        models = client._models()
+
+        if schedule.truck_plate:
+            rows = await _aio.to_thread(
+                models.execute_kw,
+                s.odoo_db, uid, s.odoo_password,
+                "fleet.vehicle", "search_read",
+                [[["license_plate", "=", schedule.truck_plate]]],
+                {"fields": ["id"], "limit": 1},
+            )
+            if rows:
+                vehicle_odoo_id = rows[0]["id"]
+
+        if schedule.driver_license_no:
+            rows = await _aio.to_thread(
+                models.execute_kw,
+                s.odoo_db, uid, s.odoo_password,
+                "driver.master.custom", "search_read",
+                [[["license", "=", schedule.driver_license_no]]],
+                {"fields": ["id"], "limit": 1},
+            )
+            if rows:
+                driver_odoo_id = rows[0]["id"]
+    except Exception:
+        pass  # non-critical — open form without pre-fill if Odoo unreachable
+
+    hash_parts = (
+        f"cids={s.odoo_so_cids}"
+        f"&menu_id={s.odoo_so_menu_id}"
+        f"&action={s.odoo_so_action_id}"
+        f"&model=sale.order&view_type=form"
+    )
+    if vehicle_odoo_id:
+        hash_parts += f"&default_vehicle_id={vehicle_odoo_id}"
+    if driver_odoo_id:
+        hash_parts += f"&default_custom_driver_id={driver_odoo_id}"
+
+    return {
+        "url": f"{s.odoo_url}/web#{hash_parts}",
+        "vehicle_found": vehicle_odoo_id is not None,
+        "driver_found": driver_odoo_id is not None,
+        "truck_plate": schedule.truck_plate,
+        "driver_name": schedule.driver_name,
+    }
+
+
+# ── GET /api/schedules/order-status ──────────────────────────────────────────
+
+@router.get("/order-status")
+async def get_order_status(db: AsyncSession = Depends(get_db)):
+    """
+    Returns all active truck schedules with their local allocation status.
+    No Odoo sync — status reflects what is tracked in the local DB only.
+    """
+    q = select(TruckSchedule).where(
+        TruckSchedule.status.notin_(["CANCELLED", "COMPLETED"])
+    ).order_by(TruckSchedule.expected_arrival_dt.asc().nulls_last())
+    result = await db.execute(q)
+    schedules = result.scalars().all()
+
+    return [
+        {
+            "schedule_id":        s.id,
+            "schedule_ref":       s.schedule_ref,
+            "expected_arrival_dt": s.expected_arrival_dt.isoformat() if s.expected_arrival_dt else None,
+            "truck_plate":        s.truck_plate,
+            "driver_name":        s.driver_name,
+            "driver_license_no":  s.driver_license_no,
+            "dealer_number":      s.dealer_number,
+            "transporter_name":   s.transporter_name,
+            "corridor_name":      s.corridor_name,
+            "origin_region":      s.origin_region,
+            "raw_material_type":  s.raw_material_type,
+            "odoo_po_name":       s.odoo_po_name,
+            "truck_status":       s.status,
+            "allocation_status":  s.allocation_status,
+        }
+        for s in schedules
+    ]
+
+
 # ── GET /api/schedules/{id} ───────────────────────────────────────────────────
 
 @router.get("/{schedule_id}", response_model=TruckScheduleRead)
