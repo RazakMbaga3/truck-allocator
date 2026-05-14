@@ -4,37 +4,16 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Truck Allocator — Nyati Cement</title>
+  <link rel="icon" type="image/png" href="/static/images/nyati-logo.png" />
   <link rel="stylesheet" href="/static/css/nyati.css" />
-  <style>
-    .data-table th, .data-table td { white-space: nowrap; font-size: 0.8rem; padding: 5px 8px; }
-    .data-table th { font-size: 0.72rem; padding: 5px 8px; }
-    .mono { font-family: monospace; font-size: 0.82rem; }
-    .pill { display:inline-block; padding:2px 8px; border-radius:999px; font-size:0.75rem; font-weight:600; }
-    .pill-expected  { background:#e8f4fd; color:#1a6fa8; }
-    .pill-arrived   { background:#e6f9ef; color:#1a7a40; }
-    .pill-confirmed { background:#173158; color:#fff; }
-    .pill-dispatched{ background:#F49545; color:#fff; }
-    .kpi-row { display:flex; gap:1rem; margin-bottom:1.5rem; flex-wrap:wrap; }
-    .kpi-card { flex:1; min-width:140px; background:#fff; border:1px solid #e5e7eb;
-                border-radius:8px; padding:1rem 1.25rem; }
-    .kpi-label { font-size:0.75rem; color:#6b7280; margin-bottom:0.25rem; }
-    .kpi-value { font-size:1.75rem; font-weight:700; color:#173158; }
-    .kpi-value.orange { color:#F49545; }
-    .kpi-value.green  { color:#239557; }
-    .kpi-sub   { font-size:0.7rem; color:#9ca3af; }
-    .empty-state { text-align:center; padding:3rem; color:#9ca3af; }
-    .empty-state-icon { font-size:3rem; margin-bottom:0.5rem; }
-    .empty-state-title { font-size:1.1rem; font-weight:600; margin-bottom:0.25rem; color:#6b7280; }
-    .route-badge { background:#f3f4f6; color:#374151; padding:2px 7px;
-                   border-radius:4px; font-size:0.75rem; }
-    .na { color:#d1d5db; }
-  </style>
 </head>
 <body>
 
 <header class="topbar">
   <div class="topbar-logo">
-    <span>TRUCK</span>&nbsp;<span class="accent">ALLOCATOR</span>
+    <div>
+      <div class="logo-title">TRUCK <span class="accent">ALLOCATOR</span></div>
+    </div>
   </div>
   <nav class="topbar-nav">
     <a href="/" class="active">Schedule</a>
@@ -50,8 +29,10 @@
 
 <main class="page">
   <div class="page-header">
-    <div class="page-title">Inbound Truck Schedule</div>
-    <div class="page-subtitle">Expected return trucks from raw material deliveries — Kimbiji Plant</div>
+    <div>
+      <div class="page-title">Inbound Truck Schedule</div>
+      <div class="page-subtitle">Expected return trucks from raw material deliveries — Kimbiji Plant</div>
+    </div>
   </div>
 
   <!-- KPI row -->
@@ -61,14 +42,14 @@
       <div class="kpi-value" id="kpi-trucks">—</div>
       <div class="kpi-sub">awaiting allocation</div>
     </div>
-    <div class="kpi-card">
+    <div class="kpi-card orange">
       <div class="kpi-label">Draft Load Plans</div>
-      <div class="kpi-value orange" id="kpi-drafts">—</div>
+      <div class="kpi-value" id="kpi-drafts">—</div>
       <div class="kpi-sub">started, not ready</div>
     </div>
-    <div class="kpi-card">
+    <div class="kpi-card green">
       <div class="kpi-label">Awaiting Loading</div>
-      <div class="kpi-value green" id="kpi-released">—</div>
+      <div class="kpi-value" id="kpi-released">—</div>
       <div class="kpi-sub">awaiting loading</div>
     </div>
     <div class="kpi-card">
@@ -82,15 +63,14 @@
   <div class="card">
     <div class="card-header">
       <span class="card-title">Inbound Trucks</span>
-      <div style="display:flex;gap:0.5rem;align-items:center">
+      <div class="card-actions">
         <button class="btn btn-outline btn-sm" onclick="exportSchedulesExcel()">Export Excel</button>
         <button class="btn btn-outline btn-sm" onclick="syncNow()">⟳ Sync Odoo</button>
-        <button class="btn btn-primary btn-sm" onclick="loadSchedules()">Refresh</button>
+        <button class="btn btn-outline btn-sm" onclick="loadSchedules()">Refresh</button>
       </div>
     </div>
     <div class="card-body">
       <div id="loading" style="padding:2rem;text-align:center"><div class="spinner"></div></div>
-      <!-- Responsive table wrapper for mobile scroll -->
       <div class="data-table-wrapper">
         <table class="data-table" id="main-table" style="display:none;width:100%">
           <thead>
@@ -113,43 +93,55 @@
       <div id="main-empty" class="empty-state" style="display:none">
         <div class="empty-state-icon">🚛</div>
         <div class="empty-state-title">No trucks scheduled</div>
-        <div>All inbound trucks have been allocated, or no POs confirmed yet.</div>
+        <p>All inbound trucks have been allocated, or no POs confirmed yet.</p>
       </div>
     </div>
   </div>
 
-  <!-- Allocated / dispatched (collapsed) -->
-  <div class="allocated-section" style="margin-top:1rem">
-    <details>
-      <summary id="allocated-summary" style="cursor:pointer;font-weight:600;color:#173158;padding:0.5rem 0">
-        ▸ Allocated / Dispatched Trucks (0)
-      </summary>
-      <div style="margin-top:0.75rem">
-        <div class="data-table-wrapper">
-          <table class="data-table" id="allocated-table" style="width:100%">
-            <thead>
-              <tr>
-                <th>PO Ref</th>
-                <th>Material</th>
-                <th>Transporter</th>
-                <th>Driver</th>
-                <th>Phone</th>
-                <th>Licence</th>
-                <th>Dealer No.</th>
-                <th>Truck No.</th>
-                <th>Location</th>
-                <th>Alloc. Status</th>
-              </tr>
-            </thead>
-            <tbody id="allocated-tbody"></tbody>
-          </table>
-        </div>
+  <!-- Allocated / dispatched (collapsible) -->
+  <div class="collapsible-card">
+    <div class="collapsible-header" id="allocated-header" onclick="toggleAllocated()">
+      <span class="collapsible-title">
+        Allocated / Dispatched Trucks
+        <span class="collapsible-count" id="allocated-count">0</span>
+      </span>
+      <span class="collapsible-chevron">▾</span>
+    </div>
+    <div class="collapsible-body" id="allocated-body">
+      <div class="data-table-wrapper">
+        <table class="data-table" id="allocated-table" style="width:100%">
+          <thead>
+            <tr>
+              <th>PO Ref</th>
+              <th>Material</th>
+              <th>Transporter</th>
+              <th>Driver</th>
+              <th>Phone</th>
+              <th>Licence</th>
+              <th>Dealer No.</th>
+              <th>Truck No.</th>
+              <th>Location</th>
+              <th>Alloc. Status</th>
+            </tr>
+          </thead>
+          <tbody id="allocated-tbody"></tbody>
+        </table>
       </div>
-    </details>
+    </div>
   </div>
 </main>
 
 <div id="toast-container"></div>
+
+<footer class="site-footer">
+  <div class="site-footer-brand">
+    Lake Cement Limited · Nyati Cement
+  </div>
+  <div class="site-footer-right">
+    <span>Kimbiji Plant, Dar es Salaam</span>
+    <span>Return Truck Allocator v1.0</span>
+  </div>
+</footer>
 
 <script src="/static/js/api.js"></script>
 <script src="/static/js/schedule-feed.js"></script>
@@ -181,6 +173,14 @@ document.addEventListener('DOMContentLoaded', () => {
   setInterval(loadKPIs, 60_000);
 });
 
+// ── Collapsible allocated section ──────────────────────────────────────────
+function toggleAllocated() {
+  const header = document.getElementById('allocated-header');
+  const body   = document.getElementById('allocated-body');
+  header.classList.toggle('open');
+  body.classList.toggle('open');
+}
+
 // ── KPIs ───────────────────────────────────────────────────────────────────
 async function loadKPIs() {
   try {
@@ -209,8 +209,8 @@ async function loadSchedules() {
     ]);
     const draftBySchedule = new Map(draftAllocations.map(a => [a.schedule_id, a]));
 
-    const available  = all.filter(s => !['WAITING_LOADING','RELEASED','LOADED'].includes(s.allocation_status));
-    const allocated  = all.filter(s => ['WAITING_LOADING','RELEASED','LOADED'].includes(s.allocation_status));
+    const available = all.filter(s => !['WAITING_LOADING','RELEASED','LOADED'].includes(s.allocation_status));
+    const allocated = all.filter(s =>  ['WAITING_LOADING','RELEASED','LOADED'].includes(s.allocation_status));
 
     renderTable('main-tbody', 'main-table', 'main-empty', 'loading', available, true, draftBySchedule);
     renderAllocated(allocated);
@@ -225,30 +225,40 @@ async function loadSchedules() {
 }
 
 // ── Render helpers ─────────────────────────────────────────────────────────
+function materialTag(material) {
+  if (!material) return '<span class="na">—</span>';
+  const key = material.toUpperCase();
+  const cls = key === 'CLINKER'  ? 'clinker'
+            : key === 'COAL'     ? 'coal'
+            : key === 'GYPSUM'   ? 'gypsum'
+            : key === 'IRON ORE' ? 'iron-ore'
+            : 'unknown';
+  return `<span class="material-tag ${cls}">${material}</span>`;
+}
+
 function truckRow(s, showAction, draftBySchedule = new Map()) {
   const na          = '<span class="na">—</span>';
   const poRef       = s.odoo_po_name ? `<span class="mono">${s.odoo_po_name}</span>` : na;
-  const material    = s.raw_material_type || na;
   const transporter = s.transporter_name || na;
   const driver      = s.driver_name      || na;
-  const license     = s.driver_license_no || na;
-  const dealer      = s.dealer_number    || na;
+  const license     = s.driver_license_no ? `<span class="mono">${s.driver_license_no}</span>` : na;
+  const dealer      = s.dealer_number    ? `<span class="mono">${s.dealer_number}</span>` : na;
   const plate       = s.truck_plate      ? `<span class="mono">${s.truck_plate}</span>` : na;
   const location    = s.origin_region    || na;
+  const phone       = s.driver_phone     || na;
   const allocStatus = fmtAllocStatus(s.allocation_status);
   const action      = showAction
-    ? `<button class="btn btn-primary btn-sm" onclick="allocateViaOdoo(${s.id})">Allocate →</button>`
+    ? `<button class="btn btn-orange btn-sm" onclick="allocateViaOdoo(${s.id})">Allocate →</button>`
     : allocStatus;
 
-  const phone = s.driver_phone || na;
   return `<tr id="sched-row-${s.id}">
     <td>${poRef}</td>
-    <td>${material}</td>
+    <td>${materialTag(s.raw_material_type)}</td>
     <td>${transporter}</td>
     <td>${driver}</td>
-    <td style="font-size:0.78rem;color:#374151">${phone}</td>
-    <td class="mono">${license}</td>
-    <td class="mono">${dealer}</td>
+    <td class="text-muted">${phone}</td>
+    <td>${license}</td>
+    <td>${dealer}</td>
     <td>${plate}</td>
     <td><strong>${location}</strong></td>
     <td>${action}</td>
@@ -270,18 +280,17 @@ function renderTable(tbodyId, tableId, emptyId, loadingId, schedules, showAction
 }
 
 function renderAllocated(schedules) {
-  const summary = document.getElementById('allocated-summary');
-  summary.textContent = `▸ Allocated / Dispatched Trucks (${schedules.length})`;
+  document.getElementById('allocated-count').textContent = schedules.length;
   document.getElementById('allocated-tbody').innerHTML =
     schedules.map(s => truckRow(s, false)).join('');
 }
 
 function fmtAllocStatus(s) {
   const map = {
-    UNALLOCATED: ['pill-expected',  'Unallocated'],
+    UNALLOCATED:     ['pill-expected',  'Unallocated'],
     WAITING_LOADING: ['pill-confirmed', 'Awaiting Loading'],
-    RELEASED:    ['pill-confirmed', 'Awaiting Loading'],
-    LOADED:      ['pill-arrived',   'Loaded ✓'],
+    RELEASED:        ['pill-confirmed', 'Awaiting Loading'],
+    LOADED:          ['pill-arrived',   'Loaded ✓'],
   };
   const [cls, label] = map[s] || ['pill-expected', s || '—'];
   return `<span class="pill ${cls}">${label}</span>`;

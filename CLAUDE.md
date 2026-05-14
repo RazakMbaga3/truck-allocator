@@ -3,17 +3,27 @@
 ### Lake Cement Limited (Nyati Cement), Tanzania
 **Project Path:** `C:\Users\USER\return trucks optimization\`
 **Plan File:** `C:\Users\USER\.claude\plans\you-are-senior-software-buzzing-clock.md`
-**Last Updated:** 2026-04-27
+**Last Updated:** 2026-05-13
 
 ---
 
 ## WHAT THIS PROJECT IS
 
-A **proactive logistics optimization system** that matches inbound raw material trucks with outbound cement delivery orders **before the trucks arrive** at the Kimbiji plant. The core trigger is Odoo 15 `purchase.order` (RM purchase) — the moment one is confirmed, the system knows a truck is coming, derives its return corridor, and matches it with cement orders along that route.
+A **return truck logistics dashboard** that tracks inbound raw material trucks and helps dispatchers allocate cement delivery orders to them via Odoo — before the trucks leave the plant.
 
-**The financial engine:** `Savings = Fresh outbound freight − Return load negotiated rate − Holding cost`
+**Core trigger:** When an Odoo 15 `purchase.order` (RM purchase) is confirmed, the system knows a truck is coming. It syncs the PO, derives the truck's return corridor (based on material and supplier origin), and creates a `TruckSchedule` entry in the local database.
 
-The system is built as a standalone **FastAPI Python service** connected to Odoo 15 via XML-RPC.
+**Dispatcher workflow:**
+1. Open the Schedule page — see all inbound trucks synced from Odoo POs
+2. Click **Allocate →** on a truck row — opens the Odoo Sale Order creation form, pre-filled with the truck plate and driver details
+3. Complete the Sale Order in Odoo — cement is assigned to the return truck
+4. Monitor on Order Status page (live Odoo SOs) and Final Status page (outcomes: Dispatched vs Released)
+
+**Background intelligence:** A matching engine and scoring system still run in the background — they score unallocated cement orders by corridor fit and urgency, and run a pre-arrival re-score job 24 hours before each truck's ETA. This data is available via API but is **not currently surfaced in the dispatcher UI** — the UI relies on the dispatcher completing allocation directly in Odoo.
+
+**Financial tracking:** `Net Savings = Fresh outbound freight − Return load negotiated rate − Holding cost`
+
+The system is built as a standalone **FastAPI Python service** connected to Odoo 15 via XML-RPC, with a local SQLite database for truck schedule tracking and savings ledger.
 
 ---
 
@@ -544,10 +554,11 @@ C:\Users\USER\return trucks optimization\
 │   │   └── savings_ledger.py              # Monthly KPI ledger
 │   ├── schemas/                           # Pydantic request/response
 │   ├── routers/
-│   │   ├── schedules.py                   # /api/schedules
-│   │   ├── proposals.py                   # /api/proposals
-│   │   ├── orders.py                      # /api/orders
-│   │   └── savings.py                     # /api/savings
+│   │   ├── schedules.py                   # /api/schedules (incl. SSE feed + odoo-url)
+│   │   ├── proposals.py                   # /api/proposals (backend only, no UI)
+│   │   ├── orders.py                      # /api/orders (live-status, final-status, exports)
+│   │   ├── allocations.py                 # /api/allocations (load plan management)
+│   │   └── savings.py                     # /api/savings (KPI summary + by-corridor)
 │   ├── services/
 │   │   ├── po_scheduler.py                # ★ PO → TruckSchedule (core v2.0)
 │   │   ├── matching_engine.py             # Core allocation algorithm

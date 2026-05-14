@@ -1,8 +1,10 @@
-# Nyati Cement — Smart Return Truck Allocator
+# Nyati Cement — Return Truck Allocator
 
 ## What It Does
 
-A smart logistics tool that tracks inbound raw material trucks from the moment a Purchase Order is confirmed in Odoo. It matches each truck's return journey with cement delivery orders heading in the same direction — so trucks that would otherwise return empty can carry a load of cement, saving freight cost on both ends.
+A logistics dashboard that tracks inbound raw material trucks from the moment a Purchase Order is confirmed in Odoo. It shows dispatchers which trucks are inbound, and lets them open an Odoo Sale Order form — pre-filled with the truck's details — so they can quickly assign a cement delivery order to the return journey.
+
+The goal: stop trucks from returning empty. Every truck that carries cement back to its origin saves the cost of sending a separate outbound truck on the same route.
 
 ---
 
@@ -13,7 +15,6 @@ A smart logistics tool that tracks inbound raw material trucks from the moment a
 | Backend API | FastAPI (Python) |
 | Database | SQLite via SQLAlchemy (async) |
 | ERP Integration | Odoo 15 (XML-RPC) |
-| AI Advisor | Anthropic Claude |
 | Background Jobs | APScheduler |
 | Dashboard | 3 HTML pages (vanilla JS) |
 | Live Updates | Server-Sent Events (SSE) |
@@ -23,13 +24,12 @@ A smart logistics tool that tracks inbound raw material trucks from the moment a
 ## How It Works — Step by Step
 
 1. A Purchase Order for raw materials (clinker, coal, gypsum, or iron ore) is confirmed in Odoo at Kimbiji Plant.
-2. The system syncs with Odoo every 15 minutes. It picks up the PO, identifies the material's origin region and return corridor, and creates a **Truck Schedule** entry.
-3. The **matching engine** scores all unallocated cement Sale Orders by how well they fit the truck's return route and remaining load capacity.
-4. The **Schedule page** shows the dispatcher a live list of inbound trucks, each with an **Allocate →** button.
-5. Clicking Allocate opens the Odoo Sale Order creation form — pre-filled with the truck plate and driver details.
-6. The dispatcher completes the Sale Order in Odoo, assigning the cement delivery to the return truck.
-7. The **Order Status page** shows all Sale Orders created in Odoo and their dispatch state (Pending or Dispatched).
-8. The **Final Status page** shows completed outcomes — which trucks carried cement (Dispatched) and which returned empty (Released), along with invoice details.
+2. The system syncs with Odoo every 15 minutes. It picks up the PO, identifies the material's origin region and return corridor, and creates a **Truck Schedule** entry in the local database.
+3. The **Schedule page** shows the dispatcher a live list of all inbound trucks, with key details: PO ref, material, transporter, driver, truck plate, and origin.
+4. The dispatcher clicks **Allocate →** on a truck row. A new window opens — the Odoo Sale Order creation form, pre-filled with the truck plate and driver ID.
+5. The dispatcher completes the Sale Order in Odoo: selects the customer, cement product, quantity, and delivery location.
+6. The **Order Status page** shows all Sale Orders created in Odoo, updated every 15 minutes. Orders are either **Pending** (truck not yet loaded) or **Dispatched** (truck has left the plant).
+7. The **Final Status page** shows completed outcomes for any selected period — trucks that carried cement (**Dispatched**) and trucks that returned empty (**Released**), along with invoice numbers and quantities.
 
 ---
 
@@ -41,13 +41,11 @@ A smart logistics tool that tracks inbound raw material trucks from the moment a
 | Order Status | `/order-status` | Cement Sale Orders from Odoo — Pending or Dispatched |
 | Final Status | `/final` | Outcomes over past N days — Dispatched vs Released with invoice data |
 
-All pages update live via SSE (Server-Sent Events) without needing a manual refresh.
-
 ---
 
 ## Return Corridors
 
-Trucks are matched based on which corridor they travel. The system knows the origin of each raw material and maps it to a return route:
+Trucks are grouped by the route they travel back to their origin. The system maps each raw material supplier to a corridor automatically:
 
 | Corridor | Raw Material | Truck Origin |
 |---|---|---|
@@ -56,14 +54,12 @@ Trucks are matched based on which corridor they travel. The system knows the ori
 | Central | Iron Ore | Dodoma |
 | Southern Coast | Gypsum | Lindi / Rufiji |
 
-The matching engine only considers cement delivery orders that fall along the truck's return corridor — within an acceptable detour distance.
-
 ---
 
 ## Odoo Integration
 
-- **Reads:** Purchase Orders (inbound raw materials), Sale Orders (cement deliveries), Stock Pickings (truck arrival status)
-- **Writes:** Opens a pre-filled Odoo Sale Order form for the dispatcher to complete
+- **Reads:** Purchase Orders (RM inbound), Sale Orders (cement deliveries), Stock Pickings (truck arrival status), Fleet Vehicles (truck plate lookup), Driver Master (driver ID lookup)
+- **Writes:** Pre-filled Odoo SO form URL that the dispatcher uses to create a new Sale Order
 - **Sync interval:** Every 15 minutes via XML-RPC
 
 ---
@@ -74,8 +70,9 @@ The matching engine only considers cement delivery orders that fall along the tr
 Net Savings = Fresh Outbound Freight − Return Load Negotiated Rate − Holding Cost
 ```
 
-The system tracks actual savings per trip and aggregates them by corridor and month.
+Savings are tracked per trip in the savings ledger and aggregated by corridor and month via the `/api/savings/summary` endpoint.
 
 ---
 
-*Lake Cement Limited — Kimbiji Plant, Dar es Salaam, Tanzania*
+*Lake Cement Limited — Kimbiji Plant, Dar es Salaam, Tanzania*  
+*App Version 3.0.0 · Updated May 2026*

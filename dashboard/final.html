@@ -4,37 +4,16 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Final Status — Nyati Cement</title>
+  <link rel="icon" type="image/png" href="/static/images/nyati-logo.png" />
   <link rel="stylesheet" href="/static/css/nyati.css" />
-  <style>
-    .data-table th, .data-table td { white-space: nowrap; font-size: 0.8rem; padding: 5px 8px; }
-    .data-table th { font-size: 0.72rem; padding: 5px 8px; }
-    .mono { font-family: monospace; font-size: 0.82rem; }
-    .pill { display:inline-block; padding:2px 10px; border-radius:999px; font-size:0.75rem; font-weight:600; }
-    .pill-dispatched { background:#173158; color:#fff; }
-    .pill-released   { background:#fef3c7; color:#92400e; }
-    .kpi-row { display:flex; gap:1rem; margin-bottom:1.5rem; flex-wrap:wrap; }
-    .kpi-card { flex:1; min-width:130px; background:#fff; border:1px solid #e5e7eb;
-                border-radius:8px; padding:1rem 1.25rem; }
-    .kpi-label { font-size:0.75rem; color:#6b7280; margin-bottom:0.25rem; }
-    .kpi-value { font-size:1.75rem; font-weight:700; color:#173158; }
-    .kpi-value.orange { color:#F49545; }
-    .kpi-value.green  { color:#239557; }
-    .kpi-sub   { font-size:0.7rem; color:#9ca3af; }
-    .empty-state { text-align:center; padding:3rem; color:#9ca3af; }
-    .na { color:#d1d5db; }
-    .filter-bar { display:flex; gap:0.75rem; align-items:center; flex-wrap:wrap; margin-bottom:0.5rem; }
-    .filter-bar select, .filter-bar input[type=number] {
-      padding:0.3rem 0.5rem; border:1px solid #d1d5db; border-radius:6px; font-size:0.85rem; }
-    .filter-bar label { font-size:0.82rem; color:#6b7280; }
-.remark-cell { max-width:200px; overflow:hidden; text-overflow:ellipsis;
-                   font-size:0.8rem; color:#6b7280; font-style:italic; }
-  </style>
 </head>
 <body>
 
 <header class="topbar">
   <div class="topbar-logo">
-    <span>TRUCK</span>&nbsp;<span class="accent">ALLOCATOR</span>
+    <div>
+      <div class="logo-title">TRUCK <span class="accent">ALLOCATOR</span></div>
+    </div>
   </div>
   <nav class="topbar-nav">
     <a href="/">Schedule</a>
@@ -62,14 +41,14 @@
       <div class="kpi-value" id="kpi-total">—</div>
       <div class="kpi-sub" id="kpi-period">last 30 days</div>
     </div>
-    <div class="kpi-card">
+    <div class="kpi-card green">
       <div class="kpi-label">Dispatched ✓</div>
       <div class="kpi-value" id="kpi-disp">—</div>
       <div class="kpi-sub">truck loaded with cement order</div>
     </div>
-    <div class="kpi-card">
+    <div class="kpi-card orange">
       <div class="kpi-label">Released ⊘</div>
-      <div class="kpi-value orange" id="kpi-rel">—</div>
+      <div class="kpi-value" id="kpi-rel">—</div>
       <div class="kpi-sub">truck not allocated to cement order</div>
     </div>
     <div class="kpi-card">
@@ -82,8 +61,8 @@
   <!-- Table -->
   <div class="card">
     <div class="card-header">
-      <span class="card-title">Sale Orders</span>
-      <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
+      <span class="card-title">Allocation Outcomes</span>
+      <div class="card-actions">
         <div class="filter-bar">
           <label>Last</label>
           <input type="number" id="days-input" value="30" min="1" max="90" style="width:60px"
@@ -121,15 +100,26 @@
         </table>
       </div>
       <div id="main-empty" class="empty-state" style="display:none">
-        <div style="font-size:3rem">📋</div>
-        <div style="font-size:1.1rem;font-weight:600;color:#6b7280;margin:0.5rem 0">No orders found</div>
-        <div>No confirmed sale orders in the selected period.</div>
+        <div class="empty-state-icon">📋</div>
+        <div class="empty-state-title">No orders found</div>
+        <p>No confirmed sale orders in the selected period.</p>
       </div>
     </div>
   </div>
 </main>
 
 <div id="toast-container"></div>
+
+<footer class="site-footer">
+  <div class="site-footer-brand">
+    Lake Cement Limited · Nyati Cement
+  </div>
+  <div class="site-footer-right">
+    <span>Kimbiji Plant, Dar es Salaam</span>
+    <span>Return Truck Allocator v1.0</span>
+  </div>
+</footer>
+
 <script src="/static/js/api.js"></script>
 <script>
 let _rows = [];
@@ -186,16 +176,16 @@ function renderTable() {
 function rowHtml(r) {
   const na = '<span class="na">—</span>';
   return `<tr>
-    <td class="mono" style="font-size:0.8rem">${r.po_ref || na}</td>
+    <td><span class="mono">${r.po_ref || na}</span></td>
     <td><span class="mono">${r.so_name || na}</span></td>
     <td>${r.transporter || na}</td>
     <td>${r.driver || na}</td>
     <td>${r.location || na}</td>
     <td style="text-align:right"><strong>${r.qty_mt ? r.qty_mt.toFixed(1) : na}</strong></td>
-    <td class="mono" style="font-size:0.8rem">${r.invoice_no || na}</td>
-    <td style="font-size:0.85rem">${r.invoice_date ? fmtDate(r.invoice_date) : na}</td>
+    <td><span class="mono">${r.invoice_no || na}</span></td>
+    <td>${r.invoice_date ? fmtDate(r.invoice_date) : na}</td>
     <td>${statusPill(r.status)}</td>
-    <td class="remark-cell" title="${r.remark || ''}">${r.remark || na}</td>
+    <td class="truncate text-muted" style="max-width:200px" title="${r.remark || ''}">${r.remark || na}</td>
   </tr>`;
 }
 
@@ -206,8 +196,7 @@ function statusPill(s) {
 
 function fmtDate(dt) {
   if (!dt) return '—';
-  const d = new Date(dt);
-  return d.toLocaleDateString('en-GB', {day:'2-digit', month:'short', year:'numeric'});
+  return new Date(dt).toLocaleDateString('en-GB', {day:'2-digit', month:'short', year:'numeric'});
 }
 
 function exportExcel() {
