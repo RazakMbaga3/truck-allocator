@@ -4,6 +4,8 @@
 # Web framework
 fastapi>=0.111.0
 uvicorn[standard]>=0.29.0
+python-multipart>=0.0.9    # required for UploadFile / form data
+python-dateutil>=2.9.0     # flexible date parsing in Excel import
 
 # ORM + migrations
 sqlalchemy[asyncio]>=2.0.0

@@ -73,8 +73,11 @@ class TruckSchedule(Base):
     driver_license_no: Mapped[str | None] = mapped_column(String(50), nullable=True)
     driver_phone: Mapped[str | None] = mapped_column(String(30), nullable=True)
     dealer_number: Mapped[str | None] = mapped_column(String(50), nullable=True)
-    # Dealer/agent reference number from the transporter company
     actual_capacity_tonnes: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    # ── Import tracking ───────────────────────────────────────────
+    dispatch_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    upload_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     # ── Route ─────────────────────────────────────────────────────
     corridor_name: Mapped[str | None] = mapped_column(String(50), nullable=True)

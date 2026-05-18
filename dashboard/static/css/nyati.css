@@ -773,6 +773,103 @@ a:hover { color: var(--orange); }
   .site-footer-right { display: none; }
 }
 
+/* ── Schedule filter bar ──────────────────────────────────────────── */
+.schedule-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  padding: 0.75rem 1.25rem;
+  background: var(--white);
+  border-bottom: 1px solid var(--gray-200);
+}
+/* Shared height & box-model so all controls sit on the same baseline */
+.schedule-filter-bar input[type=text],
+.schedule-filter-bar select {
+  height: 34px;
+  box-sizing: border-box;
+  border: 1.5px solid var(--gray-300);
+  border-radius: var(--radius-sm);
+  font-size: 0.82rem;
+  font-family: var(--font);
+  background: var(--white);
+  color: var(--navy);
+  outline: none;
+  transition: border-color 0.15s;
+}
+.schedule-filter-bar input[type=text] {
+  flex: 1;
+  min-width: 200px;
+  padding: 0 0.75rem 0 2rem;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cline x1='21' y1='21' x2='16.65' y2='16.65'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: 0.6rem center;
+}
+.schedule-filter-bar input[type=text]:focus { border-color: var(--navy); }
+.schedule-filter-bar input[type=text]::placeholder { color: var(--gray-400); }
+.schedule-filter-bar select {
+  padding: 0 0.5rem;
+  cursor: pointer;
+}
+.schedule-filter-bar select:focus { border-color: var(--navy); }
+/* Thin vertical rule separating search from dropdowns */
+.filter-divider {
+  width: 1px;
+  height: 22px;
+  background: var(--gray-200);
+  flex-shrink: 0;
+}
+/* Truck count badge */
+.filter-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-left: auto;
+  padding: 0.2rem 0.7rem;
+  background: var(--gray-100);
+  border: 1px solid var(--gray-200);
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--navy);
+  white-space: nowrap;
+}
+
+/* ── Bulk action bar ──────────────────────────────────────────────── */
+.bulk-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.55rem 1.25rem;
+  background: #fff8ec;
+  border-bottom: 1px solid #f5d89a;
+  animation: slideDown 0.15s ease;
+}
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.bulk-bar-label {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--orange-dark);
+}
+.bulk-bar-actions { display: flex; gap: 0.5rem; }
+
+/* ── Row checkbox ─────────────────────────────────────────────────── */
+.row-check {
+  width: 15px; height: 15px;
+  cursor: pointer;
+  accent-color: var(--navy);
+}
+.data-table th.check-col,
+.data-table td.check-col {
+  width: 36px;
+  padding-left: 1rem;
+  padding-right: 0.25rem;
+}
+
 /* ── Print ────────────────────────────────────────────────────────── */
 @media print {
   .topbar, .card-actions, .btn, .topbar-status, .site-footer { display: none !important; }

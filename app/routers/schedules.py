@@ -18,9 +18,9 @@ from datetime import datetime, timezone
 from io import BytesIO
 from typing import AsyncGenerator
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from fastapi.responses import StreamingResponse
-from sqlalchemy import select
+from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -127,20 +127,20 @@ async def export_schedules_excel(
     ws.title = "Scheduled Trucks"
 
     headers = [
-        "ETA",
+        "Upload Date",
+        "Dispatch Date",
         "PO Ref",
         "Material",
         "Transporter",
         "Driver Name",
+        "Phone",
         "License No.",
-        "Dealer No.",
         "Truck No.",
         "Location",
         "Schedule Ref",
         "Truck Status",
         "Allocation Status",
         "Estimated Qty (T)",
-        "Capacity (T)",
         "Corridor",
         "Notes",
     ]
@@ -148,20 +148,20 @@ async def export_schedules_excel(
 
     for schedule in schedules:
         ws.append([
-            schedule.expected_arrival_dt,
+            schedule.upload_date,
+            schedule.dispatch_date,
             schedule.odoo_po_name,
             schedule.raw_material_type,
             schedule.transporter_name,
             schedule.driver_name,
+            schedule.driver_phone,
             schedule.driver_license_no,
-            schedule.dealer_number,
             schedule.truck_plate,
             schedule.origin_region,
             schedule.schedule_ref,
             schedule.status,
             schedule.allocation_status,
             schedule.estimated_qty_tonnes,
-            schedule.effective_capacity_tonnes,
             schedule.corridor_name,
             schedule.notes,
         ])
@@ -187,6 +187,190 @@ async def export_schedules_excel(
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+# ── POST /api/schedules/import ───────────────────────────────────────────────
+
+_MATERIAL_TO_CORRIDOR = {
+    "CLINKER":  "NORTHERN",
+    "COAL":     "SOUTHERN_HIGHLANDS",
+    "GYPSUM":   "SOUTHERN_COAST",
+    "IRON ORE": "CENTRAL",
+}
+
+_HEADER_MAP = {
+    # PO reference
+    "po ref": "odoo_po_name", "po reference": "odoo_po_name", "po no": "odoo_po_name",
+    "po number": "odoo_po_name",
+    # material
+    "material": "raw_material_type", "raw material": "raw_material_type",
+    "material type": "raw_material_type",
+    # transporter
+    "transporter": "transporter_name", "transporter name": "transporter_name",
+    # driver
+    "driver": "driver_name", "driver name": "driver_name",
+    # phone
+    "phone": "driver_phone", "mobile": "driver_phone", "driver phone": "driver_phone",
+    "driver mobile": "driver_phone",
+    # licence
+    "licence": "driver_license_no", "license": "driver_license_no",
+    "driver licence": "driver_license_no", "driver license": "driver_license_no",
+    "licence no": "driver_license_no", "license no": "driver_license_no",
+    # truck plate
+    "truck no": "truck_plate", "truck no.": "truck_plate", "vehicle": "truck_plate",
+    "plate": "truck_plate", "truck plate": "truck_plate",
+    # origin/location
+    "location": "origin_region", "origin": "origin_region", "origin region": "origin_region",
+    # dispatch date
+    "date of dispatch": "dispatch_date", "dispatch date": "dispatch_date",
+    "dispatched": "dispatch_date",
+    # quantity
+    "qty (mt)": "estimated_qty_tonnes", "qty mt": "estimated_qty_tonnes",
+    "quantity": "estimated_qty_tonnes", "qty": "estimated_qty_tonnes",
+}
+
+
+@router.post("/import")
+async def import_schedules_excel(
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Import truck schedules from an Excel file.
+    File is processed entirely in memory — never written to disk.
+    Duplicate rows (same truck_plate + dispatch_date) are skipped.
+    Terminal records older than 30 days are auto-purged after import.
+    """
+    import uuid
+    from datetime import timedelta
+
+    from openpyxl import load_workbook
+
+    if not file.filename or not file.filename.lower().endswith((".xlsx", ".xls")):
+        raise HTTPException(status_code=400, detail="File must be an Excel file (.xlsx or .xls)")
+
+    # Read entirely into memory; never touch disk
+    content = await file.read()
+    await file.close()
+
+    try:
+        wb = load_workbook(BytesIO(content), read_only=True, data_only=True)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Cannot read Excel file: {e}")
+
+    ws = wb.active
+    rows = list(ws.iter_rows(values_only=True))
+    wb.close()
+
+    if not rows:
+        raise HTTPException(status_code=400, detail="Excel file is empty")
+
+    # Build column index map from header row
+    header_row = [str(c).strip().lower() if c is not None else "" for c in rows[0]]
+    col_map: dict[str, int] = {}
+    for idx, h in enumerate(header_row):
+        field = _HEADER_MAP.get(h)
+        if field and field not in col_map:
+            col_map[field] = idx
+
+    if "truck_plate" not in col_map:
+        raise HTTPException(
+            status_code=400,
+            detail="Column 'Truck No.' not found. Check header row matches the template.",
+        )
+
+    now = datetime.now(timezone.utc)
+    imported = 0
+    skipped = 0
+    errors: list[str] = []
+
+    for row_num, row in enumerate(rows[1:], start=2):
+        def cell(field: str):
+            idx = col_map.get(field)
+            return row[idx] if idx is not None and idx < len(row) else None
+
+        plate_raw = cell("truck_plate")
+        truck_plate = str(plate_raw).strip().upper() if plate_raw else None
+        if not truck_plate:
+            skipped += 1
+            continue
+
+        # Parse dispatch_date
+        dispatch_date = None
+        dd_raw = cell("dispatch_date")
+        if dd_raw:
+            if isinstance(dd_raw, datetime):
+                dispatch_date = dd_raw.replace(tzinfo=timezone.utc) if dd_raw.tzinfo is None else dd_raw
+            else:
+                try:
+                    from dateutil import parser as dateparser
+                    dispatch_date = dateparser.parse(str(dd_raw)).replace(tzinfo=timezone.utc)
+                except Exception:
+                    errors.append(f"Row {row_num}: invalid dispatch date '{dd_raw}' — imported without date")
+
+        # Dedup: skip if truck_plate + dispatch_date already exists
+        dup_q = select(TruckSchedule.id).where(TruckSchedule.truck_plate == truck_plate)
+        if dispatch_date:
+            dup_q = dup_q.where(TruckSchedule.dispatch_date == dispatch_date)
+        dup = await db.execute(dup_q.limit(1))
+        if dup.scalar_one_or_none() is not None:
+            skipped += 1
+            continue
+
+        # Resolve optional fields
+        raw_material = str(cell("raw_material_type") or "").strip().upper() or None
+        origin_region = str(cell("origin_region") or "").strip().upper() or "UNKNOWN"
+        corridor = _MATERIAL_TO_CORRIDOR.get(raw_material, None) if raw_material else None
+
+        qty_raw = cell("estimated_qty_tonnes")
+        try:
+            qty = float(qty_raw) if qty_raw is not None else 30.0
+        except (ValueError, TypeError):
+            qty = 30.0
+
+        schedule = TruckSchedule(
+            schedule_ref=f"IMP-{uuid.uuid4().hex[:10].upper()}",
+            odoo_po_name=str(cell("odoo_po_name")).strip() if cell("odoo_po_name") else None,
+            transporter_name=str(cell("transporter_name")).strip() if cell("transporter_name") else None,
+            driver_name=str(cell("driver_name")).strip() if cell("driver_name") else None,
+            driver_phone=str(cell("driver_phone")).strip() if cell("driver_phone") else None,
+            driver_license_no=str(cell("driver_license_no")).strip() if cell("driver_license_no") else None,
+            truck_plate=truck_plate,
+            origin_region=origin_region,
+            raw_material_type=raw_material,
+            corridor_name=corridor,
+            estimated_qty_tonnes=qty,
+            dispatch_date=dispatch_date,
+            upload_date=now,
+            status=TruckScheduleStatus.EXPECTED,
+            allocation_status=AllocationStatus.UNALLOCATED,
+        )
+        db.add(schedule)
+        imported += 1
+
+    await db.flush()
+
+    # Auto-cleanup: delete terminal records older than 30 days
+    cutoff = now - timedelta(days=30)
+    cleanup_result = await db.execute(
+        delete(TruckSchedule).where(
+            TruckSchedule.allocation_status.in_(["LOADED", "RELEASED"]),
+            TruckSchedule.upload_date < cutoff,
+        ).returning(TruckSchedule.id)
+    )
+    cleaned_up = len(cleanup_result.fetchall())
+
+    await db.commit()
+
+    if imported > 0:
+        broadcast_sse("schedules_imported", {"imported": imported})
+
+    return {
+        "imported": imported,
+        "skipped": skipped,
+        "cleaned_up": cleaned_up,
+        "errors": errors,
+    }
 
 
 # ── GET /api/schedules/odoo-config ───────────────────────────────────────────
@@ -316,6 +500,59 @@ async def get_order_status(db: AsyncSession = Depends(get_db)):
         }
         for s in schedules
     ]
+
+
+# ── POST /api/schedules/bulk-delete ──────────────────────────────────────────
+
+@router.post("/bulk-delete")
+async def bulk_delete_schedules(
+    payload: dict,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Delete multiple truck schedules by ID.
+    Body: { "ids": [1, 2, 3] }
+    """
+    ids = payload.get("ids", [])
+    if not ids:
+        return {"ok": True, "deleted": 0}
+
+    # Remove linked proposals first (FK constraint)
+    await db.execute(
+        delete(AllocationProposal).where(AllocationProposal.schedule_id.in_(ids))
+    )
+
+    result = await db.execute(
+        delete(TruckSchedule)
+        .where(TruckSchedule.id.in_(ids))
+        .returning(TruckSchedule.id)
+    )
+    deleted = len(result.fetchall())
+    await db.commit()
+
+    if deleted:
+        broadcast_sse("schedules_deleted", {"count": deleted})
+
+    return {"ok": True, "deleted": deleted}
+
+
+# ── DELETE /api/schedules/{id} ────────────────────────────────────────────────
+
+@router.delete("/{schedule_id}")
+async def delete_schedule(schedule_id: int, db: AsyncSession = Depends(get_db)):
+    """Delete a single truck schedule and its linked allocation proposals."""
+    schedule = await _get_or_404(schedule_id, db)
+
+    # Remove linked proposals first
+    await db.execute(
+        delete(AllocationProposal).where(AllocationProposal.schedule_id == schedule_id)
+    )
+    await db.delete(schedule)
+    await db.commit()
+
+    broadcast_sse("schedule_deleted", {"schedule_id": schedule_id})
+
+    return {"ok": True, "deleted": schedule_id}
 
 
 # ── GET /api/schedules/{id} ───────────────────────────────────────────────────

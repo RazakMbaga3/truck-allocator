@@ -11,8 +11,15 @@
 
 <header class="topbar">
   <div class="topbar-logo">
+    <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <rect x="1" y="3" width="15" height="13" rx="1"/>
+      <path d="M16 8h4l3 5v4h-7V8z"/>
+      <circle cx="5.5" cy="18.5" r="2.5"/>
+      <circle cx="18.5" cy="18.5" r="2.5"/>
+    </svg>
     <div>
       <div class="logo-title">TRUCK <span class="accent">ALLOCATOR</span></div>
+      <div class="logo-sub">Kimbiji Plant · Nyati Cement</div>
     </div>
   </div>
   <nav class="topbar-nav">
@@ -64,26 +71,62 @@
     <div class="card-header">
       <span class="card-title">Inbound Trucks</span>
       <div class="card-actions">
-        <button class="btn btn-outline btn-sm" onclick="exportSchedulesExcel()">Export Excel</button>
+        <button class="btn btn-orange btn-sm" onclick="triggerImport()">↑ Import Excel</button>
+        <input type="file" id="import-file-input" accept=".xlsx,.xls" style="display:none" onchange="handleImport(event)">
+        <button class="btn btn-outline btn-sm" onclick="exportSchedulesExcel()">↓ Export Excel</button>
         <button class="btn btn-outline btn-sm" onclick="syncNow()">⟳ Sync Odoo</button>
         <button class="btn btn-outline btn-sm" onclick="loadSchedules()">Refresh</button>
       </div>
     </div>
+
+    <!-- Filter bar -->
+    <div class="schedule-filter-bar">
+      <input type="text" id="search-input" placeholder="Search plate, driver, transporter…" oninput="applyFilters()">
+      <div class="filter-divider"></div>
+      <select id="material-filter" onchange="applyFilters()">
+        <option value="">All Materials</option>
+        <option value="CLINKER">Clinker</option>
+        <option value="COAL">Coal</option>
+        <option value="GYPSUM">Gypsum</option>
+        <option value="IRON ORE">Iron Ore</option>
+      </select>
+      <select id="corridor-filter" onchange="applyFilters()">
+        <option value="">All Corridors</option>
+        <option value="NORTHERN">Northern</option>
+        <option value="SOUTHERN_HIGHLANDS">Southern Highlands</option>
+        <option value="CENTRAL">Central</option>
+        <option value="SOUTHERN_COAST">Southern Coast</option>
+      </select>
+      <button class="btn btn-outline btn-xs" onclick="clearFilters()">✕ Clear</button>
+      <span class="filter-count" id="row-count">0 trucks</span>
+    </div>
+
+    <!-- Bulk action bar (hidden until rows selected) -->
+    <div class="bulk-bar" id="bulk-bar" style="display:none">
+      <span class="bulk-bar-label" id="bulk-count">0 selected</span>
+      <div class="bulk-bar-actions">
+        <button class="btn btn-danger btn-sm" onclick="deleteSelected()">🗑 Delete Selected</button>
+        <button class="btn btn-outline btn-sm" onclick="clearSelection()">Clear selection</button>
+      </div>
+    </div>
+
     <div class="card-body">
       <div id="loading" style="padding:2rem;text-align:center"><div class="spinner"></div></div>
       <div class="data-table-wrapper">
         <table class="data-table" id="main-table" style="display:none;width:100%">
           <thead>
             <tr>
+              <th class="check-col"><input type="checkbox" id="select-all" class="row-check" onchange="selectAll(this.checked)" title="Select all"></th>
               <th>PO Ref</th>
               <th>Material</th>
               <th>Transporter</th>
               <th>Driver</th>
               <th>Phone</th>
               <th>Licence</th>
-              <th>Dealer No.</th>
               <th>Truck No.</th>
               <th>Location</th>
+              <th>Dispatch Date</th>
+              <th>Upload Date</th>
               <th>Action</th>
             </tr>
           </thead>
@@ -118,10 +161,12 @@
               <th>Driver</th>
               <th>Phone</th>
               <th>Licence</th>
-              <th>Dealer No.</th>
               <th>Truck No.</th>
               <th>Location</th>
+              <th>Dispatch Date</th>
+              <th>Upload Date</th>
               <th>Alloc. Status</th>
+              <th></th>
             </tr>
           </thead>
           <tbody id="allocated-tbody"></tbody>
@@ -134,9 +179,7 @@
 <div id="toast-container"></div>
 
 <footer class="site-footer">
-  <div class="site-footer-brand">
-    Lake Cement Limited · Nyati Cement
-  </div>
+  <div class="site-footer-brand">Lake Cement Limited · Nyati Cement</div>
   <div class="site-footer-right">
     <span>Kimbiji Plant, Dar es Salaam</span>
     <span>Return Truck Allocator v1.0</span>
@@ -146,9 +189,12 @@
 <script src="/static/js/api.js"></script>
 <script src="/static/js/schedule-feed.js"></script>
 <script>
+// ── State ──────────────────────────────────────────────────────────────────
+let _allAvailable = [];   // full unfiltered available trucks list
+let _selectedIds  = new Set();
+
+// ── Odoo Allocate ──────────────────────────────────────────────────────────
 async function allocateViaOdoo(scheduleId) {
-  // Open blank window immediately (in click handler) to avoid popup blocker,
-  // then navigate it to the Odoo URL once the server resolves the IDs.
   const win = window.open('', '_blank');
   try {
     const data = await API.get(`/api/schedules/${scheduleId}/odoo-url`);
@@ -173,12 +219,10 @@ document.addEventListener('DOMContentLoaded', () => {
   setInterval(loadKPIs, 60_000);
 });
 
-// ── Collapsible allocated section ──────────────────────────────────────────
+// ── Collapsible ────────────────────────────────────────────────────────────
 function toggleAllocated() {
-  const header = document.getElementById('allocated-header');
-  const body   = document.getElementById('allocated-body');
-  header.classList.toggle('open');
-  body.classList.toggle('open');
+  document.getElementById('allocated-header').classList.toggle('open');
+  document.getElementById('allocated-body').classList.toggle('open');
 }
 
 // ── KPIs ───────────────────────────────────────────────────────────────────
@@ -201,18 +245,18 @@ async function loadSchedules() {
   document.getElementById('loading').style.display    = 'block';
   document.getElementById('main-table').style.display = 'none';
   document.getElementById('main-empty').style.display = 'none';
+  clearSelection();
 
   try {
     const [all, draftAllocations] = await Promise.all([
       API.schedules('?status=all'),
       API.allocations('?status=draft'),
     ]);
-    const draftBySchedule = new Map(draftAllocations.map(a => [a.schedule_id, a]));
 
-    const available = all.filter(s => !['WAITING_LOADING','RELEASED','LOADED'].includes(s.allocation_status));
+    _allAvailable = all.filter(s => !['WAITING_LOADING','RELEASED','LOADED'].includes(s.allocation_status));
     const allocated = all.filter(s =>  ['WAITING_LOADING','RELEASED','LOADED'].includes(s.allocation_status));
 
-    renderTable('main-tbody', 'main-table', 'main-empty', 'loading', available, true, draftBySchedule);
+    applyFilters();
     renderAllocated(allocated);
 
     document.getElementById('last-sync').textContent =
@@ -224,10 +268,49 @@ async function loadSchedules() {
   }
 }
 
-// ── Render helpers ─────────────────────────────────────────────────────────
+// ── Filters ────────────────────────────────────────────────────────────────
+function applyFilters() {
+  const search   = document.getElementById('search-input').value.toLowerCase().trim();
+  const material = document.getElementById('material-filter').value.toUpperCase();
+  const corridor = document.getElementById('corridor-filter').value;
+
+  const visible = _allAvailable.filter(s => {
+    if (material) {
+      const mat = (s.raw_material_type || '').toUpperCase().replace('_', ' ');
+      const sel = material.replace('_', ' ');
+      if (mat !== sel) return false;
+    }
+    if (corridor && s.corridor_name !== corridor) return false;
+    if (search) {
+      const hay = [s.truck_plate, s.driver_name, s.transporter_name,
+                   s.odoo_po_name, s.origin_region, s.driver_license_no]
+        .filter(Boolean).join(' ').toLowerCase();
+      if (!hay.includes(search)) return false;
+    }
+    return true;
+  });
+
+  const countEl = document.getElementById('row-count');
+  if (search || material || corridor) {
+    countEl.textContent = `${visible.length} of ${_allAvailable.length} trucks`;
+  } else {
+    countEl.textContent = `${visible.length} truck${visible.length !== 1 ? 's' : ''}`;
+  }
+
+  renderMain(visible);
+}
+
+function clearFilters() {
+  document.getElementById('search-input').value = '';
+  document.getElementById('material-filter').value = '';
+  document.getElementById('corridor-filter').value = '';
+  applyFilters();
+}
+
+// ── Render ─────────────────────────────────────────────────────────────────
 function materialTag(material) {
   if (!material) return '<span class="na">—</span>';
-  const key = material.toUpperCase();
+  const key = material.toUpperCase().replace('_', ' ');
   const cls = key === 'CLINKER'  ? 'clinker'
             : key === 'COAL'     ? 'coal'
             : key === 'GYPSUM'   ? 'gypsum'
@@ -236,53 +319,78 @@ function materialTag(material) {
   return `<span class="material-tag ${cls}">${material}</span>`;
 }
 
-function truckRow(s, showAction, draftBySchedule = new Map()) {
+function fmtDate(dt) {
+  if (!dt) return '<span class="na">—</span>';
+  return new Date(dt).toLocaleDateString('en-GB', {day:'2-digit', month:'short', year:'numeric'});
+}
+
+function truckRow(s, showCheckbox) {
   const na          = '<span class="na">—</span>';
   const poRef       = s.odoo_po_name ? `<span class="mono">${s.odoo_po_name}</span>` : na;
   const transporter = s.transporter_name || na;
-  const driver      = s.driver_name      || na;
+  const driver      = s.driver_name || na;
   const license     = s.driver_license_no ? `<span class="mono">${s.driver_license_no}</span>` : na;
-  const dealer      = s.dealer_number    ? `<span class="mono">${s.dealer_number}</span>` : na;
-  const plate       = s.truck_plate      ? `<span class="mono">${s.truck_plate}</span>` : na;
-  const location    = s.origin_region    || na;
-  const phone       = s.driver_phone     || na;
-  const allocStatus = fmtAllocStatus(s.allocation_status);
-  const action      = showAction
-    ? `<button class="btn btn-orange btn-sm" onclick="allocateViaOdoo(${s.id})">Allocate →</button>`
-    : allocStatus;
+  const plate       = s.truck_plate ? `<span class="mono">${s.truck_plate}</span>` : na;
+  const phone       = s.driver_phone || na;
 
-  return `<tr id="sched-row-${s.id}">
-    <td>${poRef}</td>
-    <td>${materialTag(s.raw_material_type)}</td>
-    <td>${transporter}</td>
-    <td>${driver}</td>
-    <td class="text-muted">${phone}</td>
-    <td>${license}</td>
-    <td>${dealer}</td>
-    <td>${plate}</td>
-    <td><strong>${location}</strong></td>
-    <td>${action}</td>
-  </tr>`;
+  if (showCheckbox) {
+    const checked = _selectedIds.has(s.id) ? 'checked' : '';
+    return `<tr id="sched-row-${s.id}">
+      <td class="check-col"><input type="checkbox" class="row-check" data-id="${s.id}" ${checked} onchange="onCheckChange(this)"></td>
+      <td>${poRef}</td>
+      <td>${materialTag(s.raw_material_type)}</td>
+      <td>${transporter}</td>
+      <td>${driver}</td>
+      <td class="text-muted">${phone}</td>
+      <td>${license}</td>
+      <td>${plate}</td>
+      <td><strong>${s.origin_region || '—'}</strong></td>
+      <td>${fmtDate(s.dispatch_date)}</td>
+      <td class="text-muted">${fmtDate(s.upload_date)}</td>
+      <td style="display:flex;gap:0.35rem;align-items:center">
+        <button class="btn btn-orange btn-sm" onclick="allocateViaOdoo(${s.id})">Allocate →</button>
+        <button class="btn btn-outline btn-sm" title="Delete this truck" onclick="deleteRow(${s.id},'${(s.truck_plate||s.schedule_ref).replace(/'/g,"\\'")}')">🗑</button>
+      </td>
+    </tr>`;
+  } else {
+    // Allocated section row — no checkbox, delete still available
+    const allocStatus = fmtAllocStatus(s.allocation_status);
+    return `<tr id="sched-row-${s.id}">
+      <td>${poRef}</td>
+      <td>${materialTag(s.raw_material_type)}</td>
+      <td>${transporter}</td>
+      <td>${driver}</td>
+      <td class="text-muted">${phone}</td>
+      <td>${license}</td>
+      <td>${plate}</td>
+      <td><strong>${s.origin_region || '—'}</strong></td>
+      <td>${fmtDate(s.dispatch_date)}</td>
+      <td class="text-muted">${fmtDate(s.upload_date)}</td>
+      <td>${allocStatus}</td>
+      <td><button class="btn btn-outline btn-xs" title="Delete" onclick="deleteRow(${s.id},'${(s.truck_plate||s.schedule_ref).replace(/'/g,"\\'")}')">🗑</button></td>
+    </tr>`;
+  }
 }
 
-function renderTable(tbodyId, tableId, emptyId, loadingId, schedules, showAction, draftBySchedule = new Map()) {
-  if (loadingId) document.getElementById(loadingId).style.display = 'none';
+function renderMain(schedules) {
+  document.getElementById('loading').style.display = 'none';
 
   if (!schedules.length) {
-    document.getElementById(tableId).style.display = 'none';
-    document.getElementById(emptyId).style.display = 'block';
+    document.getElementById('main-table').style.display = 'none';
+    document.getElementById('main-empty').style.display = 'block';
+    document.getElementById('select-all').checked = false;
     return;
   }
 
-  document.getElementById(tableId).style.display = 'table';
-  document.getElementById(emptyId).style.display = 'none';
-  document.getElementById(tbodyId).innerHTML = schedules.map(s => truckRow(s, showAction, draftBySchedule)).join('');
+  document.getElementById('main-table').style.display = 'table';
+  document.getElementById('main-empty').style.display = 'none';
+  document.getElementById('main-tbody').innerHTML = schedules.map(s => truckRow(s, true)).join('');
+  syncSelectAllState();
 }
 
 function renderAllocated(schedules) {
   document.getElementById('allocated-count').textContent = schedules.length;
-  document.getElementById('allocated-tbody').innerHTML =
-    schedules.map(s => truckRow(s, false)).join('');
+  document.getElementById('allocated-tbody').innerHTML = schedules.map(s => truckRow(s, false)).join('');
 }
 
 function fmtAllocStatus(s) {
@@ -296,15 +404,153 @@ function fmtAllocStatus(s) {
   return `<span class="pill ${cls}">${label}</span>`;
 }
 
-// ── SSE ────────────────────────────────────────────────────────────────────
-function handleSSEEvent(type, data) {
-  if (['truck_allocated','truck_arrived','schedule_updated','truck_dispatched'].includes(type)) {
+// ── Selection ──────────────────────────────────────────────────────────────
+function onCheckChange(checkbox) {
+  const id = parseInt(checkbox.dataset.id);
+  if (checkbox.checked) _selectedIds.add(id);
+  else                  _selectedIds.delete(id);
+  updateBulkBar();
+  syncSelectAllState();
+}
+
+function selectAll(checked) {
+  document.querySelectorAll('#main-tbody .row-check').forEach(cb => {
+    cb.checked = checked;
+    const id = parseInt(cb.dataset.id);
+    if (checked) _selectedIds.add(id);
+    else         _selectedIds.delete(id);
+  });
+  updateBulkBar();
+}
+
+function clearSelection() {
+  _selectedIds.clear();
+  document.querySelectorAll('#main-tbody .row-check').forEach(cb => cb.checked = false);
+  const sa = document.getElementById('select-all');
+  if (sa) sa.checked = false;
+  updateBulkBar();
+}
+
+function syncSelectAllState() {
+  const all = document.querySelectorAll('#main-tbody .row-check');
+  const sa  = document.getElementById('select-all');
+  if (!sa || !all.length) return;
+  const checkedCount = [...all].filter(c => c.checked).length;
+  sa.checked         = checkedCount === all.length;
+  sa.indeterminate   = checkedCount > 0 && checkedCount < all.length;
+}
+
+function updateBulkBar() {
+  const bar   = document.getElementById('bulk-bar');
+  const count = document.getElementById('bulk-count');
+  const n = _selectedIds.size;
+  bar.style.display  = n > 0 ? 'flex' : 'none';
+  count.textContent  = `${n} truck${n !== 1 ? 's' : ''} selected`;
+}
+
+// ── Delete ─────────────────────────────────────────────────────────────────
+function showConfirmDialog(title, message, confirmLabel, onConfirm) {
+  const overlay = document.createElement('div');
+  overlay.className = 'dialog-overlay';
+  overlay.innerHTML = `
+    <div class="dialog-box">
+      <div class="dialog-header">
+        <div class="dialog-icon danger" style="font-size:1.1rem">🗑</div>
+        <div class="dialog-title">${title}</div>
+      </div>
+      <div class="dialog-body"><p>${message}</p></div>
+      <div class="dialog-footer">
+        <button class="btn btn-outline btn-sm" id="dlg-cancel">Cancel</button>
+        <button class="btn btn-danger btn-sm" id="dlg-confirm">${confirmLabel}</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.querySelector('#dlg-cancel').onclick  = () => overlay.remove();
+  overlay.querySelector('#dlg-confirm').onclick = () => { overlay.remove(); onConfirm(); };
+  overlay.onclick = e => { if (e.target === overlay) overlay.remove(); };
+}
+
+function deleteRow(id, label) {
+  showConfirmDialog(
+    'Delete Truck Schedule',
+    `Remove <strong>${label}</strong> from the schedule?<br>This cannot be undone.`,
+    'Delete',
+    async () => {
+      try {
+        const res = await fetch(`/api/schedules/${id}`, { method: 'DELETE' });
+        if (!res.ok) throw new Error((await res.json()).detail || 'Delete failed');
+        _selectedIds.delete(id);
+        showToast(`Deleted: ${label}`, 'green');
+        loadSchedules();
+        loadKPIs();
+      } catch (e) {
+        showToast('Delete failed: ' + e.message, 'orange');
+      }
+    }
+  );
+}
+
+function deleteSelected() {
+  const ids = [..._selectedIds];
+  if (!ids.length) return;
+  showConfirmDialog(
+    'Delete Selected Trucks',
+    `Permanently delete <strong>${ids.length} truck schedule${ids.length !== 1 ? 's' : ''}</strong>?<br>This cannot be undone.`,
+    `Delete ${ids.length}`,
+    async () => {
+      try {
+        const res = await fetch('/api/schedules/bulk-delete', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ids}),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Bulk delete failed');
+        showToast(`Deleted ${data.deleted} truck${data.deleted !== 1 ? 's' : ''}`, 'green');
+        loadSchedules();
+        loadKPIs();
+      } catch (e) {
+        showToast('Delete failed: ' + e.message, 'orange');
+      }
+    }
+  );
+}
+
+// ── Import Excel ───────────────────────────────────────────────────────────
+function triggerImport() {
+  document.getElementById('import-file-input').click();
+}
+
+async function handleImport(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  event.target.value = '';
+  showToast('Importing…');
+  const form = new FormData();
+  form.append('file', file);
+  try {
+    const res  = await fetch('/api/schedules/import', { method: 'POST', body: form });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Import failed');
+    let msg = `Imported ${data.imported} truck${data.imported !== 1 ? 's' : ''}`;
+    if (data.skipped)    msg += ` · ${data.skipped} skipped (duplicate)`;
+    if (data.cleaned_up) msg += ` · ${data.cleaned_up} old records removed`;
+    showToast(msg, 'green');
     loadSchedules();
     loadKPIs();
-    if (type === 'truck_allocated')
-      showToast(`Awaiting loading: ${data.schedule_ref}`, 'green');
-    if (type === 'truck_dispatched')
-      showToast(`Loaded: ${data.schedule_ref}`, 'green');
+  } catch (e) {
+    showToast('Import error: ' + e.message, 'orange');
+  }
+}
+
+// ── SSE ────────────────────────────────────────────────────────────────────
+function handleSSEEvent(type, data) {
+  const reload = ['truck_allocated','truck_arrived','schedule_updated','truck_dispatched','schedules_imported'];
+  if (reload.includes(type)) {
+    loadSchedules();
+    loadKPIs();
+    if (type === 'truck_allocated')  showToast(`Awaiting loading: ${data.schedule_ref}`, 'green');
+    if (type === 'truck_dispatched') showToast(`Loaded: ${data.schedule_ref}`, 'green');
   }
 }
 

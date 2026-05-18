@@ -60,6 +60,8 @@ class TruckScheduleRead(BaseModel):
     expected_arrival_dt: datetime | None
     actual_arrival_dt: datetime | None
     dispatched_at: datetime | None
+    dispatch_date: datetime | None
+    upload_date: datetime | None
     status: str
     allocation_status: str
     is_available: bool
@@ -86,6 +88,8 @@ class TruckScheduleListItem(BaseModel):
     transporter_name: str | None
     corridor_name: str | None
     expected_arrival_dt: datetime | None
+    dispatch_date: datetime | None
+    upload_date: datetime | None
     status: str
     allocation_status: str
     is_available: bool
