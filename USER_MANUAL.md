@@ -7,7 +7,7 @@
 
 The Return Truck Allocator is a logistics dashboard that helps dispatchers track inbound raw material trucks and assign cement delivery orders to them before they leave the plant.
 
-When a supplier delivers raw materials (clinker, coal, gypsum, or iron ore) to Kimbiji Plant, the delivery truck does not need to return empty. This tool shows you which trucks are inbound, helps you identify which ones can carry a cement order on the return journey, and opens the Odoo Sale Order form pre-filled with the truck's details so you can complete the allocation quickly.
+When a supplier dispatches a truck with raw materials (clinker, coal, gypsum, or iron ore) headed for Kimbiji Plant, the **Purchase department** prepares an Excel sheet with the truck's details and uploads it to the system. The Logistics team then sees the truck on the Schedule page, identifies a suitable cement order for the return journey, and allocates it directly in Odoo — all before the truck even arrives.
 
 **The result:** fewer empty return trips, lower freight costs, and better truck utilisation.
 
@@ -36,7 +36,19 @@ The app has three pages, accessible from the navigation bar at the top:
 ## 3. The Schedule Page
 
 **URL:** `/`  
-**Purpose:** Your main working page. Shows all inbound raw material trucks synced from Odoo.
+**Purpose:** Your main working page. Shows all inbound raw material trucks imported from Purchase department Excel sheets.
+
+### How Trucks Enter the System
+
+Trucks no longer come from Odoo Purchase Orders. Instead:
+
+1. The **Purchase department** prepares an Excel sheet as soon as a transporter is dispatched with raw materials.
+2. The Logistics team clicks **↑ Import Excel** on the Schedule page and selects the file.
+3. The system reads the file in memory, adds each truck to the list, and shows a toast message: _"Imported N trucks · M skipped"_.
+4. The **Date of Upload** is automatically stamped by the server — no manual entry required.
+5. If the same file is uploaded again (same truck plate + dispatch date), duplicates are skipped automatically.
+
+> **Old records are cleaned up automatically.** Each successful import removes terminal records (Loaded / Released) older than 30 days to keep the database lean.
 
 ### Reading the Dashboard Cards
 
@@ -49,21 +61,34 @@ At the top of the page you will see four summary cards:
 | **Awaiting Loading** | Trucks that have been allocated and are waiting to be loaded |
 | **Loaded This Month** | Trucks successfully loaded with cement this month, with completion % |
 
+### Filter Bar
+
+Above the truck table is a filter bar that lets you narrow the list without reloading:
+
+| Control | What It Does |
+|---|---|
+| **Search box** | Type any part of a plate number, driver name, or transporter name |
+| **All Materials** | Filter by raw material (Clinker, Coal, Gypsum, Iron Ore) |
+| **All Corridors** | Filter by return corridor (Northern, Southern Highlands, Central, Southern Coast) |
+| **✕ Clear** | Remove all active filters and show the full list |
+| **Truck count badge** | Shows how many trucks are visible after filtering (e.g. _12 of 34 trucks_) |
+
 ### Reading the Truck Table
 
 The main table lists all inbound trucks. Each row is one truck:
 
 | Column | Meaning |
 |---|---|
-| **PO Ref** | The Odoo Purchase Order number (LPORD/YYYY/NNNNN) |
+| **PO Ref** | Purchase Order reference (may be blank if not available at dispatch time) |
 | **Material** | The raw material being delivered (CLINKER, COAL, GYPSUM, IRON ORE) |
 | **Transporter** | The transport company name |
 | **Driver** | Driver's full name |
 | **Phone** | Driver's mobile number |
 | **Licence** | Driver's licence/ID number |
-| **Dealer No.** | Inward token or gate entry number (RM/YYYY/NNNNN) |
 | **Truck No.** | Vehicle plate number |
 | **Location** | The truck's origin region (where it is coming from) |
+| **Dispatch Date** | Date the truck left the supplier — from the Excel sheet |
+| **Upload Date** | Date the Excel sheet was uploaded to this system — auto-stamped |
 | **Action** | Button or status indicator |
 
 ### Truck Status Pills
@@ -75,6 +100,15 @@ Trucks that have already been processed show a status pill instead of an Allocat
 | Grey — *Unallocated* | No action taken yet |
 | Navy — *Awaiting Loading* | Allocated; truck is being loaded with cement |
 | Green — *Loaded ✓* | Truck has been loaded and dispatched |
+
+### Deleting Records
+
+Individual truck rows can be deleted using the **🗑 Delete** button on each row. A confirmation dialog will appear before anything is removed.
+
+To delete multiple rows at once:
+1. Check the checkbox on each row you want to remove (or use the checkbox in the table header to select all visible rows).
+2. The **bulk action bar** appears at the top of the table showing how many rows are selected.
+3. Click **Delete Selected** and confirm.
 
 ### The Collapsible Section at the Bottom
 
@@ -204,17 +238,40 @@ The Excel file is formatted with Nyati Cement branding (navy and orange headers)
 
 ---
 
-## 8. Syncing with Odoo
+## 8. Importing and Syncing Data
 
-The system automatically syncs with Odoo every **15 minutes**. This means:
-- New Purchase Orders confirmed in Odoo will appear as new truck rows within 15 minutes
-- Sale Order status changes (dispatched, cancelled) will appear within 15 minutes
+### Importing Truck Data (Excel — Schedule page)
 
-**To force an immediate sync:** Click the **⟳ Sync Odoo** button on the Schedule page. This triggers a manual full sync with Odoo and refreshes all data.
+Inbound truck records are entered by uploading an Excel sheet prepared by the Purchase department.
+
+**Steps:**
+1. Click **↑ Import Excel** on the Schedule page.
+2. Select the `.xlsx` file from your computer.
+3. The system imports immediately — a toast notification confirms how many trucks were added.
+4. Re-uploading the same file is safe — duplicate rows (same plate + dispatch date) are skipped automatically.
+
+**Excel column headers the system accepts** (any capitalisation):
+
+| Accepted column name | Field |
+|---|---|
+| PO Ref / PO Reference / PO No | PO Reference |
+| Material / Raw Material | Material type |
+| Transporter / Transporter Name | Transporter |
+| Driver / Driver Name | Driver name |
+| Phone / Mobile | Driver phone |
+| Licence / License / Licence No | Driver licence |
+| Truck No. / Truck No / Vehicle / Plate | Truck plate |
+| Location / Origin / Origin Region | Origin |
+| Date of Dispatch / Dispatch Date | Dispatch date |
+| Qty (MT) / Quantity / Qty | Estimated quantity (default: 30 MT if blank) |
+
+### Syncing Sale Order Data (Odoo)
+
+The Order Status and Final Status pages pull data from Odoo. This syncs automatically every **15 minutes**.
+
+**To force an immediate sync:** Click the **⟳ Sync Odoo** button on the Schedule page.
 
 **To refresh the current view without syncing:** Click the **Refresh** button.
-
-The **last sync time** is shown in the top-right corner of each page next to the green live indicator dot.
 
 ---
 
@@ -245,7 +302,7 @@ The system organises trucks by their **return corridor** — the route the truck
 A: The truck plate or driver is not registered in Odoo's fleet master. Fill in the Truck No. and Driver fields manually in the Odoo SO form. Notify your Odoo administrator to add the vehicle to the fleet register.
 
 **Q: A truck is showing in the Schedule but the PO Ref column is blank — is that normal?**
-A: Yes, this can happen if the Purchase Order was synced before the PO number was recorded. It will fill in on the next sync cycle (within 15 minutes).
+A: Yes. The PO Ref field is optional in the Excel sheet. If the Purchase department has not yet confirmed the PO number at the time of dispatch, this column may be left blank. It can be filled in by re-uploading a corrected sheet.
 
 **Q: The Order Status page shows "No orders found" — is that correct?**
 A: Check the date range filter (default is last 7 days). Extend it to 14 or 30 days. If still empty, the Odoo sync may not have run yet — click **Sync Odoo** on the Schedule page and then refresh.
@@ -270,10 +327,11 @@ A: Released means no posted invoice was found in Odoo for that truck. Check in O
 | **Dispatched** | A truck that has left the plant loaded with cement (confirmed by Odoo invoice) |
 | **Pending** | A Sale Order that exists in Odoo but the truck has not yet been confirmed as loaded |
 | **Transporter** | The transport company operating the truck |
-| **Dealer No.** | The inward token or gate entry number assigned when the truck arrives at the plant |
+| **Dispatch Date** | The date the truck left the supplier (from the Purchase department Excel sheet) |
+| **Upload Date** | The date and time the Excel sheet was uploaded to this system (auto-stamped by server) |
 | **TZS** | Tanzanian Shilling — currency used for freight and savings calculations |
 
 ---
 
 *Nyati Cement — Lake Cement Limited · Kimbiji Plant, Dar es Salaam, Tanzania*  
-*App Version 3.0.0 · Updated May 2026*
+*App Version 3.1.0 · Updated May 2026*

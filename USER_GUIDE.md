@@ -51,7 +51,13 @@ The green dot in the top-right corner means the dashboard is receiving live upda
 
 **URL:** `http://localhost:8001/`
 
-This is your main working screen. It shows every inbound raw material truck that is expected at Kimbiji Plant.
+This is your main working screen. It shows every inbound raw material truck imported from Purchase department Excel sheets.
+
+### How Trucks Get Into the System
+
+The **Purchase department** prepares an Excel sheet as soon as a transporter is dispatched from the supplier. The Logistics team uploads it using the **↑ Import Excel** button. The system processes the file instantly — no manual row entry required — and stamps each record with the upload date automatically.
+
+Re-uploading the same file is safe: rows with the same truck plate and dispatch date are skipped automatically.
 
 ### KPI Cards (top of page)
 
@@ -62,30 +68,41 @@ This is your main working screen. It shows every inbound raw material truck that
 | **Avg Utilization** | Average truck fill rate for matched trucks (target: >85%) |
 | **Matched This Month** | Number of confirmed allocations this calendar month |
 
+### Filter Bar
+
+| Control | What It Does |
+|---------|---------|
+| **Search box** | Filter by plate, driver name, or transporter (live as you type) |
+| **All Materials** | Narrow to one material type |
+| **All Corridors** | Narrow to one return corridor |
+| **✕ Clear** | Remove all filters |
+| **Count badge** | Shows visible / total trucks (e.g. _8 of 23 trucks_) |
+
 ### Truck Table
 
 Each row is one truck. Columns explained:
 
 | Column | Meaning |
 |--------|---------|
-| **ETA** | Expected arrival date and time at Kimbiji Plant |
+| **PO Ref** | Purchase Order reference (optional — may be blank at dispatch time) |
+| **Material** | Raw material being delivered (CLINKER, COAL, GYPSUM, IRON ORE) |
 | **Transporter** | Haulier company name |
-| **Driver Name** | Driver name (filled in when transporter pre-advises) |
-| **License No.** | Driver licence number |
-| **Dealer No.** | Transporter's internal job/dealer reference number |
+| **Driver Name** | Driver name |
+| **Phone** | Driver mobile number |
+| **Licence** | Driver licence/ID number |
 | **Truck No.** | Truck plate (e.g. T865EHY) |
-| **Origin** | Where the truck is coming from (TANGA, MBEYA, DODOMA, KIRANJERANJE) |
-| **Material** | Raw material being delivered (CLINKER, COAL, GYPSUM, IRON_ORE) |
-| **Route** | Return corridor (NORTHERN, CENTRAL, SOUTHERN_HIGHLAND, COASTAL) |
+| **Location** | Where the truck is coming from |
+| **Dispatch Date** | Date the truck left the supplier (from Excel) |
+| **Upload Date** | Date this record was imported (auto-stamped by server) |
 | **Status** | Current truck lifecycle stage (see below) |
-| **Action** | Button to view proposals for this truck |
+| **Action** | Allocate button or status pill |
 
 ### Truck Status Values
 
 | Status | Meaning |
 |--------|---------|
-| `EXPECTED` | Truck is coming — PO confirmed in Odoo, not yet pre-advised |
-| `PRE_CONFIRMED` | Transporter has sent pre-advice (plate and/or driver known) |
+| `EXPECTED` | Truck imported and expected at plant — not yet pre-advised |
+| `PRE_CONFIRMED` | Transporter has sent pre-advice (plate and/or driver confirmed) |
 | `ARRIVED` | Truck has physically arrived at Kimbiji Plant gate |
 | `LOADED` | Cement has been loaded onto the truck |
 | `DISPATCHED` | Truck has left the plant with cement |
@@ -95,35 +112,20 @@ Each row is one truck. Columns explained:
 
 | Status | Meaning |
 |--------|---------|
-| `UNMATCHED` | No cement orders matched yet |
+| `UNALLOCATED` | No cement order assigned yet |
 | `PROPOSED` | System has generated proposals — awaiting dispatcher review |
 | `CONFIRMED` | Dispatcher has confirmed a loading plan |
 | `DISPATCHED` | Truck has departed with cement |
 
-### Adding Truck Details (Pre-Advice)
+### Managing Records
 
-When a transporter calls in advance with truck plate, driver name, and capacity:
+**Delete a single row:** Click the **🗑** icon on any row and confirm the dialog.
 
-1. Click the **Review** button on the truck row.
-2. On the proposals page, the truck details panel will appear at the top.
-3. Enter the truck plate, driver name, driver phone, and actual capacity.
-4. Click **Save Details** — the status moves from EXPECTED to PRE_CONFIRMED.
+**Bulk delete:** Check the boxes on multiple rows → the bulk action bar appears → click **Delete Selected** and confirm.
 
-### Marking a Truck as Arrived
+### Syncing Odoo Data
 
-When a truck physically arrives at the plant gate:
-
-1. Find the truck in the Schedule table.
-2. Click **Review** → then **Mark Arrived** on the proposals page.
-3. The status updates to ARRIVED and the actual arrival time is recorded.
-
-### Syncing with Odoo
-
-The system syncs with Odoo automatically every 15 minutes. To force an immediate sync:
-
-Click **⟳ Sync Odoo** in the top-right of the Schedule table.
-
-This pulls any new confirmed Purchase Orders (new inbound trucks) and updated Sale Orders (new cement delivery orders) from Odoo.
+The **⟳ Sync Odoo** button syncs Sale Order and Final Status data from Odoo — it does **not** import truck schedules (those come from Excel). Use it to refresh the Order Status and Final Status pages.
 
 ---
 
@@ -267,7 +269,7 @@ Check the Route Deviation km. A high detour (>80 km) significantly reduces savin
 The SSE connection has dropped. Refresh the page — data will not have been lost, the page just stopped receiving automatic updates temporarily.
 
 **Truck arrived but not in the system:**
-The PO may not yet be confirmed in Odoo, or the 15-minute sync has not run. Click **⟳ Sync Odoo** to pull the latest POs immediately.
+The Purchase department may not have uploaded the Excel sheet yet, or the truck was added to the sheet after the last upload. Ask Purchase to re-export and upload the latest sheet using **↑ Import Excel**.
 
 ---
 
@@ -276,17 +278,19 @@ The PO may not yet be confirmed in Odoo, or the 15-minute sync has not run. Clic
 ```
 MORNING
   1. Open Schedule page → check trucks arriving today and tomorrow
-  2. Click ⟳ Sync Odoo to pull overnight POs and SOs
+  2. Receive Excel sheet from Purchase dept → click ↑ Import Excel → select file
   3. Review any PROPOSED trucks → open Proposals page → confirm best variant
+  4. Click ⟳ Sync Odoo to pull overnight SOs and update Order/Final Status pages
 
 DURING THE DAY
-  4. When transporter calls with pre-advice → enter truck plate + driver details
-  5. When truck arrives at gate → click Mark Arrived
-  6. When truck is loaded and leaving → click Dispatch
+  5. Each time Purchase sends a new Excel sheet → click ↑ Import Excel (re-upload safe)
+  6. When transporter calls with pre-advice → verify truck is in the list by plate search
+  7. When truck arrives at gate → click Mark Arrived
+  8. When truck is loaded and leaving → click Dispatch
 
 END OF DAY
-  7. Review Confirmed page → check no trucks left unloaded
-  8. Export CSV if needed for daily operations report
+  9. Review Confirmed page → check no trucks left unloaded
+  10. Export Excel if needed for daily operations report
 ```
 
 ---
@@ -303,4 +307,4 @@ END OF DAY
 ---
 
 *Smart Return Truck Allocator · Lake Cement Limited (Nyati Cement) · Kimbiji Plant*
-*Document version: May 2026*
+*Document version: May 2026 (v3.1.0 — Excel import workflow)*

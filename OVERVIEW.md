@@ -2,7 +2,9 @@
 
 ## What It Does
 
-A logistics dashboard that tracks inbound raw material trucks from the moment a Purchase Order is confirmed in Odoo. It shows dispatchers which trucks are inbound, and lets them open an Odoo Sale Order form — pre-filled with the truck's details — so they can quickly assign a cement delivery order to the return journey.
+A logistics dashboard that tracks inbound raw material trucks and helps dispatchers allocate cement delivery orders to them before the trucks leave the plant.
+
+Truck data enters the system through the **Purchase department**, who prepare an Excel sheet as soon as a transporter is dispatched with raw materials. The Logistics team uploads the sheet via the **Import Excel** button on the Schedule page — the system records each truck instantly, stamping the upload date automatically.
 
 The goal: stop trucks from returning empty. Every truck that carries cement back to its origin saves the cost of sending a separate outbound truck on the same route.
 
@@ -23,9 +25,9 @@ The goal: stop trucks from returning empty. Every truck that carries cement back
 
 ## How It Works — Step by Step
 
-1. A Purchase Order for raw materials (clinker, coal, gypsum, or iron ore) is confirmed in Odoo at Kimbiji Plant.
-2. The system syncs with Odoo every 15 minutes. It picks up the PO, identifies the material's origin region and return corridor, and creates a **Truck Schedule** entry in the local database.
-3. The **Schedule page** shows the dispatcher a live list of all inbound trucks, with key details: PO ref, material, transporter, driver, truck plate, and origin.
+1. A transporter is dispatched with raw materials from the supplier. The **Purchase department** prepares an Excel sheet with the truck details (transporter, driver, plate, origin, date of dispatch, etc.).
+2. The Logistics team uploads the Excel sheet using the **↑ Import Excel** button on the Schedule page. The system processes it in memory (no file is stored), deduplicates rows, and auto-stamps each record with the upload date.
+3. The **Schedule page** shows a live list of all inbound trucks, searchable and filterable by material, corridor, plate, driver, or transporter.
 4. The dispatcher clicks **Allocate →** on a truck row. A new window opens — the Odoo Sale Order creation form, pre-filled with the truck plate and driver ID.
 5. The dispatcher completes the Sale Order in Odoo: selects the customer, cement product, quantity, and delivery location.
 6. The **Order Status page** shows all Sale Orders created in Odoo, updated every 15 minutes. Orders are either **Pending** (truck not yet loaded) or **Dispatched** (truck has left the plant).
@@ -56,11 +58,19 @@ Trucks are grouped by the route they travel back to their origin. The system map
 
 ---
 
+## Data Entry
+
+| Source | What It Provides |
+|---|---|
+| **Purchase dept — Excel upload** | Inbound truck records (transporter, driver, plate, material, origin, dispatch date) |
+| **Odoo (Sale Orders)** | Cement delivery orders — Order Status and Final Status pages |
+| **Odoo (Fleet / Driver Master)** | Pre-fills truck plate and driver ID on the Allocate → SO form |
+
 ## Odoo Integration
 
-- **Reads:** Purchase Orders (RM inbound), Sale Orders (cement deliveries), Stock Pickings (truck arrival status), Fleet Vehicles (truck plate lookup), Driver Master (driver ID lookup)
+- **Reads:** Sale Orders (cement deliveries), Fleet Vehicles (truck plate lookup), Driver Master (driver ID lookup)
 - **Writes:** Pre-filled Odoo SO form URL that the dispatcher uses to create a new Sale Order
-- **Sync interval:** Every 15 minutes via XML-RPC
+- **Note:** Purchase Order sync from Odoo is no longer used for the Schedule page. Truck data now comes from Purchase department Excel uploads.
 
 ---
 
@@ -75,4 +85,4 @@ Savings are tracked per trip in the savings ledger and aggregated by corridor an
 ---
 
 *Lake Cement Limited — Kimbiji Plant, Dar es Salaam, Tanzania*  
-*App Version 3.0.0 · Updated May 2026*
+*App Version 3.1.0 · Updated May 2026*

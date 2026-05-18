@@ -3,7 +3,7 @@
 ### Lake Cement Limited (Nyati Cement), Tanzania
 **Project Path:** `C:\Users\USER\return trucks optimization\`
 **Plan File:** `C:\Users\USER\.claude\plans\you-are-senior-software-buzzing-clock.md`
-**Last Updated:** 2026-05-13
+**Last Updated:** 2026-05-18
 
 ---
 
@@ -11,13 +11,14 @@
 
 A **return truck logistics dashboard** that tracks inbound raw material trucks and helps dispatchers allocate cement delivery orders to them via Odoo — before the trucks leave the plant.
 
-**Core trigger:** When an Odoo 15 `purchase.order` (RM purchase) is confirmed, the system knows a truck is coming. It syncs the PO, derives the truck's return corridor (based on material and supplier origin), and creates a `TruckSchedule` entry in the local database.
+**Data entry (as of 2026-05-18):** Truck schedule data is entered via **Excel import**, not Odoo PO sync. The Purchase department prepares an Excel sheet as soon as a transporter is dispatched from the supplier. The Logistics team uploads the sheet via `POST /api/schedules/import`. The server processes the file in memory (never written to disk), deduplicates by `truck_plate + dispatch_date`, auto-stamps `upload_date`, derives the return corridor from `raw_material_type`, and auto-purges terminal records (LOADED/RELEASED) older than 30 days on each successful import.
 
 **Dispatcher workflow:**
-1. Open the Schedule page — see all inbound trucks synced from Odoo POs
-2. Click **Allocate →** on a truck row — opens the Odoo Sale Order creation form, pre-filled with the truck plate and driver details
-3. Complete the Sale Order in Odoo — cement is assigned to the return truck
-4. Monitor on Order Status page (live Odoo SOs) and Final Status page (outcomes: Dispatched vs Released)
+1. Open the Schedule page — see all inbound trucks imported from Purchase dept Excel sheets
+2. Use the filter bar (search, material, corridor dropdowns) to find relevant trucks
+3. Click **Allocate →** on a truck row — opens the Odoo Sale Order creation form, pre-filled with the truck plate and driver details
+4. Complete the Sale Order in Odoo — cement is assigned to the return truck
+5. Monitor on Order Status page (live Odoo SOs) and Final Status page (outcomes: Dispatched vs Released)
 
 **Background intelligence:** A matching engine and scoring system still run in the background — they score unallocated cement orders by corridor fit and urgency, and run a pre-arrival re-score job 24 hours before each truck's ETA. This data is available via API but is **not currently surfaced in the dispatcher UI** — the UI relies on the dispatcher completing allocation directly in Odoo.
 
