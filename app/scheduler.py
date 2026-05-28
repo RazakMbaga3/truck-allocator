@@ -57,6 +57,15 @@ def start_scheduler() -> None:
         misfire_grace_time=600,
     )
 
+    _scheduler.add_job(
+        job_allocation_sync,
+        trigger=IntervalTrigger(minutes=5),
+        id="ALLOCATION_SYNC",
+        name="Auto-Sync Allocation Status from Odoo",
+        replace_existing=True,
+        misfire_grace_time=60,
+    )
+
     _scheduler.start()
     logger.info(
         "Scheduler started: %d jobs — sync every %d min",
@@ -107,6 +116,63 @@ async def job_urgency_rescore() -> None:
             logger.info("URGENCY_RESCORE: updated %d orders", len(orders))
         except Exception as e:
             logger.error("URGENCY_RESCORE failed: %s", e)
+
+
+async def job_allocation_sync() -> None:
+    """
+    Option B: Auto-sync allocation status by cross-referencing Odoo REST API
+    truck plates with local TruckSchedule records. Runs every 5 minutes.
+    """
+    from app.database import AsyncSessionLocal
+    from app.models import AllocationStatus, TruckSchedule
+    from app.services.odoo_sync import OdooClient
+    from app.routers.schedules import broadcast_sse
+    from sqlalchemy import select
+
+    logger.info("JOB: ALLOCATION_SYNC starting")
+    client = OdooClient()
+
+    try:
+        so_rows = await asyncio.to_thread(client.fetch_sale_orders_rest, 90)
+    except Exception as e:
+        logger.error("ALLOCATION_SYNC: REST fetch failed: %s", e)
+        return
+
+    odoo_plates = {
+        (r.get("truck_no") or "").replace(" ", "").upper()
+        for r in so_rows
+        if r.get("truck_no")
+    }
+
+    if not odoo_plates:
+        logger.info("ALLOCATION_SYNC: no truck plates in Odoo SOs")
+        return
+
+    async with AsyncSessionLocal() as session:
+        try:
+            result = await session.execute(
+                select(TruckSchedule).where(
+                    TruckSchedule.allocation_status == AllocationStatus.UNALLOCATED,
+                    TruckSchedule.truck_plate.isnot(None),
+                )
+            )
+            schedules = result.scalars().all()
+            matched = 0
+            for s in schedules:
+                plate = (s.truck_plate or "").replace(" ", "").upper()
+                if plate in odoo_plates:
+                    s.allocation_status = AllocationStatus.WAITING_LOADING
+                    broadcast_sse("schedule_updated", {
+                        "schedule_id": s.id,
+                        "allocation_status": s.allocation_status,
+                        "truck_plate": s.truck_plate,
+                    })
+                    matched += 1
+            if matched:
+                await session.commit()
+            logger.info("ALLOCATION_SYNC: matched and updated %d truck(s)", matched)
+        except Exception as e:
+            logger.error("ALLOCATION_SYNC failed: %s", e)
 
 
 async def job_pre_arrival_rematch() -> None:

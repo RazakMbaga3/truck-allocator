@@ -45,22 +45,22 @@
   <!-- KPI row -->
   <div class="kpi-row">
     <div class="kpi-card">
-      <div class="kpi-label">Expected Trucks (7 days)</div>
+      <div class="kpi-label">Inbound Trucks</div>
       <div class="kpi-value" id="kpi-trucks">—</div>
-      <div class="kpi-sub">awaiting allocation</div>
+      <div class="kpi-sub">en route to plant</div>
     </div>
     <div class="kpi-card orange">
-      <div class="kpi-label">Draft Load Plans</div>
+      <div class="kpi-label">Unallocated</div>
       <div class="kpi-value" id="kpi-drafts">—</div>
-      <div class="kpi-sub">started, not ready</div>
+      <div class="kpi-sub">need cement order</div>
     </div>
     <div class="kpi-card green">
-      <div class="kpi-label">Awaiting Loading</div>
+      <div class="kpi-label">At Plant</div>
       <div class="kpi-value" id="kpi-released">—</div>
-      <div class="kpi-sub">awaiting loading</div>
+      <div class="kpi-sub">arrived, awaiting loading</div>
     </div>
     <div class="kpi-card">
-      <div class="kpi-label">Loaded This Month</div>
+      <div class="kpi-label">Dispatched This Month</div>
       <div class="kpi-value" id="kpi-loaded">—</div>
       <div class="kpi-sub" id="kpi-completion">—</div>
     </div>
@@ -75,6 +75,7 @@
         <input type="file" id="import-file-input" accept=".xlsx,.xls" style="display:none" onchange="handleImport(event)">
         <button class="btn btn-outline btn-sm" onclick="exportSchedulesExcel()">↓ Export Excel</button>
         <button class="btn btn-outline btn-sm" onclick="syncNow()">⟳ Sync Odoo</button>
+        <button class="btn btn-outline btn-sm" onclick="syncAllocations()">⟳ Sync Allocations</button>
         <button class="btn btn-outline btn-sm" onclick="loadSchedules()">Refresh</button>
       </div>
     </div>
@@ -193,6 +194,34 @@
 let _allAvailable = [];   // full unfiltered available trucks list
 let _selectedIds  = new Set();
 
+// ── Mark Allocated (Option A) ──────────────────────────────────────────────
+async function markAllocated(scheduleId, label) {
+  if (!confirm(`Mark truck ${label} as Allocated?\n\nThis will move it out of the available list. Only do this after you have completed the Sale Order in Odoo.`)) return;
+  try {
+    await API.patch(`/api/schedules/${scheduleId}/mark-allocated`);
+    showToast(`${label} marked as Allocated ✓`, 'green');
+    loadSchedules();
+  } catch (e) {
+    showToast('Error: ' + e.message, 'orange');
+  }
+}
+
+// ── Auto Sync Allocations (Option B — manual trigger) ─────────────────────
+async function syncAllocations() {
+  showToast('Checking Odoo for allocated trucks…', 'green');
+  try {
+    const r = await API.post('/api/schedules/sync-allocations');
+    if (r.matched > 0) {
+      showToast(`Auto-sync: ${r.matched} truck(s) marked as allocated`, 'green');
+      loadSchedules();
+    } else {
+      showToast('Auto-sync: no new allocations found in Odoo', 'green');
+    }
+  } catch (e) {
+    showToast('Sync error: ' + e.message, 'orange');
+  }
+}
+
 // ── Odoo Allocate ──────────────────────────────────────────────────────────
 async function allocateViaOdoo(scheduleId) {
   const win = window.open('', '_blank');
@@ -229,12 +258,12 @@ function toggleAllocated() {
 async function loadKPIs() {
   try {
     const s = await API.summary();
-    document.getElementById('kpi-trucks').textContent   = s.trucks_expected_next_7d ?? '—';
-    document.getElementById('kpi-drafts').textContent   = s.draft_load_plans ?? '—';
-    document.getElementById('kpi-released').textContent = s.waiting_loading_allocations ?? s.released_awaiting_loading ?? '—';
-    document.getElementById('kpi-loaded').textContent   = s.loaded_allocations_mtd ?? '—';
+    document.getElementById('kpi-trucks').textContent   = s.trucks_inbound ?? s.trucks_expected_next_7d ?? '—';
+    document.getElementById('kpi-drafts').textContent   = s.trucks_unallocated ?? s.draft_load_plans ?? '—';
+    document.getElementById('kpi-released').textContent = s.trucks_at_plant ?? s.waiting_loading_allocations ?? '—';
+    document.getElementById('kpi-loaded').textContent   = s.trucks_dispatched_mtd ?? s.loaded_allocations_mtd ?? '—';
     document.getElementById('kpi-completion').textContent =
-      `${s.load_plan_completion_pct ?? 0}% completion · ${s.month_key ?? '—'}`;
+      `${s.dispatch_completion_pct ?? s.load_plan_completion_pct ?? 0}% dispatched · ${s.month_key ?? '—'}`;
   } catch (e) {
     console.warn('KPI load failed:', e);
   }
@@ -347,8 +376,9 @@ function truckRow(s, showCheckbox) {
       <td><strong>${s.origin_region || '—'}</strong></td>
       <td>${fmtDate(s.dispatch_date)}</td>
       <td class="text-muted">${fmtDate(s.upload_date)}</td>
-      <td style="display:flex;gap:0.35rem;align-items:center">
+      <td style="display:flex;gap:0.35rem;align-items:center;flex-wrap:wrap">
         <button class="btn btn-orange btn-sm" onclick="allocateViaOdoo(${s.id})">Allocate →</button>
+        <button class="btn btn-green btn-sm" title="Mark this truck as allocated after completing SO in Odoo" onclick="markAllocated(${s.id}, '${(s.truck_plate||s.schedule_ref).replace(/'/g,"\\'")}')">✓ Allocated</button>
         <button class="btn btn-outline btn-sm" title="Delete this truck" onclick="deleteRow(${s.id},'${(s.truck_plate||s.schedule_ref).replace(/'/g,"\\'")}')">🗑</button>
       </td>
     </tr>`;

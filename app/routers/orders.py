@@ -78,62 +78,56 @@ async def list_by_corridor(corridor: str, db: AsyncSession = Depends(get_db)):
 @router.get("/live-status")
 async def get_live_status(days: int = Query(7, ge=1, le=90)):
     """
-    Fetch recent Sale Orders directly from Odoo for the Order Status dashboard page.
+    Fetch recent Sale Orders from Odoo REST API for the Order Status page.
     Returns: date, customer, location, transporter, driver, license, qty, status.
     """
     import asyncio as _aio
-    import re
-    from datetime import datetime, timedelta, timezone
     from app.services.odoo_sync import OdooClient
-    from app.config import get_settings
 
-    s = get_settings()
     client = OdooClient()
-    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d 00:00:00")
+    rows = await _aio.to_thread(client.fetch_sale_orders_rest, days)
 
-    uid = await _aio.to_thread(client._uid_or_auth)
-    models = client._models()
-
-    rows = await _aio.to_thread(
-        models.execute_kw,
-        s.odoo_db, uid, s.odoo_password,
-        "sale.order", "search_read",
-        [[["date_order", ">=", cutoff], ["state", "not in", ["cancel"]]]],
-        {
-            "fields": [
-                "name", "date_order", "partner_id", "custom_location_id",
-                "transporter_name", "custom_driver_name", "driver_license",
-                "driver_mobile", "qty_mt_ordered", "state",
-            ],
-            "order": "date_order desc",
-            "limit": 50,
-        },
-    )
-
-    STATUS = {
-        "draft": "Pending", "sent": "Pending",
-        "sale": "Pending", "done": "Dispatched", "cancel": "Cancelled",
+    STATE_MAP = {
+        "draft": "Pending", "sent": "Pending", "sale": "Pending",
+        "done": "Dispatched", "cancel": "Cancelled",
     }
 
     result = []
     for r in rows:
-        driver      = r["custom_driver_name"] or None
-        location    = r["custom_location_id"][1] if r["custom_location_id"] else None
-        transporter = r["transporter_name"] or None
-        # Skip SOs with no truck details assigned yet — not actionable for dispatch
+        driver      = r.get("driver_name") or None
+        location    = r.get("destination_location") or None
+        transporter = r.get("transporter_name") or None
+        # Skip SOs with no truck/driver details — not actionable for dispatch
         if not driver and not transporter and not location:
             continue
+
+        # delivery_status is the authoritative dispatch field
+        delivery_status = r.get("delivery_status", "")
+        if delivery_status == "delivered":
+            status = "Dispatched"
+        else:
+            status = "Pending"
+
+        # qty_mt: UOM varies — "50 KG BAG" needs ÷20, "MT" is already in tonnes
+        qty_mt = 0.0
+        for line in (r.get("order_lines") or []):
+            qty = float(line.get("product_uom_qty", 0))
+            if line.get("uom") == "MT":
+                qty_mt += qty
+            else:
+                qty_mt += qty / 20.0
+
         result.append({
-            "so_name":      r["name"],
-            "date_order":   r["date_order"],
-            "customer":     r["partner_id"][1] if r["partner_id"] else None,
+            "so_name":      r.get("name"),
+            "date_order":   r.get("date_order"),
+            "customer":     r.get("partner_name"),
             "location":     location,
             "transporter":  transporter,
             "driver":       driver,
-            "license":      r["driver_license"] or None,
-            "driver_phone": r["driver_mobile"] or None,
-            "qty_mt":       r["qty_mt_ordered"] or 0,
-            "status":       STATUS.get(r["state"], r["state"]),
+            "license":      r.get("driver_license") or None,
+            "driver_phone": r.get("driver_mobile") or None,
+            "qty_mt":       qty_mt,
+            "status":       status,
         })
     return result
 
@@ -245,118 +239,77 @@ async def get_final_status(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Fetch SOs with invoice data from Odoo + PO reference from local TruckSchedule.
-    Returns: po_ref, so_name, transporter, driver, location, qty, invoice_no,
-             invoice_date, status (Dispatched/Released), remark.
+    Fetch SOs from Odoo REST API + PO reference from local TruckSchedule.
+    Returns: po_ref, so_name, transporter, driver, location, qty,
+             invoice_no, invoice_date, status (Dispatched/Released), remark.
     """
     import asyncio as _aio
-    import re
-    from datetime import datetime, timedelta, timezone
     from sqlalchemy import select as sa_select
     from app.models import TruckSchedule
     from app.services.odoo_sync import OdooClient
-    from app.config import get_settings
 
-    s = get_settings()
     client = OdooClient()
-    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d 00:00:00")
+    so_rows = await _aio.to_thread(client.fetch_sale_orders_rest, days)
 
-    uid = await _aio.to_thread(client._uid_or_auth)
-    models = client._models()
+    # Filter out cancelled and draft — exclude orders with no operational data
+    so_rows = [r for r in so_rows if r.get("state") not in ("cancel", "draft")]
 
-    # 1. Fetch SOs
-    so_rows = await _aio.to_thread(
-        models.execute_kw,
-        s.odoo_db, uid, s.odoo_password,
-        "sale.order", "search_read",
-        [[["date_order", ">=", cutoff], ["state", "not in", ["cancel", "draft"]]]],
-        {
-            "fields": [
-                "name", "date_order", "partner_id", "custom_location_id",
-                "transporter_name", "custom_driver_name", "driver_license",
-                "qty_mt_ordered", "state", "invoice_ids", "vehicle",
-                "client_order_ref", "note",
-            ],
-            "order": "date_order desc",
-            "limit": 50,
-        },
-    )
-
-    # 2. Batch-fetch all invoices in one call
-    all_inv_ids = [inv_id for r in so_rows for inv_id in (r["invoice_ids"] or [])]
-    inv_map: dict[int, dict] = {}
-    if all_inv_ids:
-        inv_rows = await _aio.to_thread(
-            models.execute_kw,
-            s.odoo_db, uid, s.odoo_password,
-            "account.move", "read",
-            [list(set(all_inv_ids))],
-            {"fields": ["id", "name", "invoice_date", "state", "payment_state"]},
-        )
-        inv_map = {i["id"]: i for i in inv_rows}
-
-    # 3. Look up PO references from local DB by truck plate
-    plates = [r["vehicle"] for r in so_rows if r.get("vehicle")]
+    # Look up PO references from local DB by truck plate
+    plates = [r["truck_no"] for r in so_rows if r.get("truck_no")]
     po_by_plate: dict[str, str] = {}
     if plates:
-        result = await db.execute(
+        res = await db.execute(
             sa_select(TruckSchedule.truck_plate, TruckSchedule.odoo_po_name).where(
                 TruckSchedule.truck_plate.in_(plates),
                 TruckSchedule.odoo_po_name.isnot(None),
             )
         )
-        po_by_plate = {row.truck_plate: row.odoo_po_name for row in result}
+        po_by_plate = {row.truck_plate: row.odoo_po_name for row in res}
 
-    def strip_html(html: str) -> str:
-        if not html:
-            return ""
-        return re.sub(r"<[^>]+>", "", html).strip()
-
-    def so_status(r: dict) -> str:
-        inv_ids = r.get("invoice_ids") or []
-        posted = any(inv_map.get(i, {}).get("state") == "posted" for i in inv_ids)
-        if posted:
-            return "Dispatched"
-        return "Released"
-
-    def clean_po_ref(r: dict) -> str | None:
-        # Prefer internal PO name matched by truck plate
-        plate_ref = po_by_plate.get(r.get("vehicle") or "", None)
-        if plate_ref:
-            return plate_ref
-        raw = (r.get("client_order_ref") or "").strip()
-        if not raw:
-            return None
-        # Reject tender descriptions: too long or multi-word (not a compact reference code)
-        if len(raw) > 40 or raw.count(" ") > 3:
-            return None
-        return raw
+    STATE_MAP = {"done": "Dispatched", "sale": "Pending", "sent": "Pending"}
 
     output = []
     for r in so_rows:
-        inv_ids = r.get("invoice_ids") or []
-        first_inv = inv_map.get(inv_ids[0]) if inv_ids else None
-        driver    = r["custom_driver_name"] or None
-        location  = r["custom_location_id"][1] if r["custom_location_id"] else None
-        transporter = r["transporter_name"] or None
+        driver      = r.get("driver_name") or None
+        location    = r.get("destination_location") or None
+        transporter = r.get("transporter_name") or None
 
-        # Skip rows with no operational data (no truck details and no invoice)
-        if not driver and not location and not transporter and not first_inv:
+        if not driver and not location and not transporter:
             continue
 
+        # delivery_status + invoice_status determine final outcome
+        delivery_status = r.get("delivery_status", "")
+        invoice_status  = r.get("invoice_status", "")
+        if delivery_status == "delivered" and invoice_status == "invoiced":
+            status = "Dispatched"
+        elif delivery_status == "delivered":
+            status = "Dispatched"
+        else:
+            status = "Released"
+
+        # qty_mt: UOM varies — "50 KG BAG" needs ÷20, "MT" is already in tonnes
+        qty_mt = 0.0
+        for line in (r.get("order_lines") or []):
+            qty = float(line.get("product_uom_qty", 0))
+            if line.get("uom") == "MT":
+                qty_mt += qty
+            else:
+                qty_mt += qty / 20.0
+
+        truck_no = r.get("truck_no") or ""
         output.append({
-            "po_ref":        clean_po_ref(r),
-            "so_name":       r["name"],
-            "transporter":   transporter,
-            "driver":        driver,
-            "license":       r["driver_license"] or None,
-            "location":      location,
-            "qty_mt":        r["qty_mt_ordered"] or 0,
-            "invoice_no":    first_inv["name"] if first_inv else None,
-            "invoice_date":  first_inv["invoice_date"] if first_inv else None,
-            "status":        so_status(r),
-            "remark":        strip_html(r.get("note") or ""),
-            "date_order":    r["date_order"],
+            "po_ref":       po_by_plate.get(truck_no),
+            "so_name":      r.get("name"),
+            "transporter":  transporter,
+            "driver":       driver,
+            "license":      r.get("driver_license") or None,
+            "location":     location,
+            "qty_mt":       qty_mt,
+            "invoice_no":   r.get("invoice_no") or None,
+            "invoice_date": r.get("invoice_date") or None,
+            "status":       status,
+            "remark":       r.get("note") or "",
+            "date_order":   r.get("date_order"),
         })
     return output
 

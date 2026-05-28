@@ -354,6 +354,49 @@ class OdooClient:
             logger.error("Failed to confirm picking %d: %s", picking_id, e)
             return False
 
+    # ── READ: Sale Orders via REST API ───────────────────────────
+
+    def fetch_sale_orders_rest(self, days: int = 30) -> list[dict]:
+        """
+        Fetch sale orders from GET /api/sale-orders (Odoo REST endpoint).
+        Authentication: Public. Returns flat dicts.
+        Field names: name, state, partner_name, destination_location,
+                     truck_no, driver_name, driver_mobile, driver_license,
+                     transporter_name, x_dispatch_status, amount_total, etc.
+        """
+        import httpx
+        from datetime import datetime, timedelta, timezone
+
+        url = f"{self._url}/api/sale-orders"
+        cutoff_dt = datetime.now(timezone.utc) - timedelta(days=days)
+        cutoff_str = cutoff_dt.strftime("%Y-%m-%d")
+
+        try:
+            with httpx.Client(timeout=30.0) as http:
+                # Pass date filter; server may or may not honour it
+                resp = http.get(url, params={"date_from": cutoff_str})
+                resp.raise_for_status()
+                data = resp.json()
+        except Exception as e:
+            logger.error("REST /api/sale-orders fetch failed: %s", e)
+            return []
+
+        # Handle {"result": [...]} wrapper (Odoo JSON-RPC format)
+        if isinstance(data, dict) and "result" in data:
+            records: list = data["result"]
+        elif isinstance(data, list):
+            records = data
+        else:
+            logger.warning("Unexpected REST API response format: %s", type(data))
+            return []
+
+        # Local date filter — handles case where server ignores date_from param
+        filtered = [
+            r for r in records
+            if (r.get("date_order") or "")[:10] >= cutoff_str
+        ]
+        return filtered
+
     # ── HEALTH ────────────────────────────────────────────────────
 
     def ping(self) -> dict:

@@ -467,6 +467,76 @@ async def get_odoo_url(schedule_id: int, db: AsyncSession = Depends(get_db)):
     }
 
 
+# ── PATCH /api/schedules/{id}/mark-allocated — Option A ──────────────────────
+
+@router.patch("/{schedule_id}/mark-allocated")
+async def mark_allocated(schedule_id: int, db: AsyncSession = Depends(get_db)):
+    """
+    Dispatcher manually marks a truck as allocated after completing SO in Odoo.
+    Moves the truck from the available list to the Allocated section.
+    """
+    schedule = await _get_or_404(schedule_id, db)
+    schedule.allocation_status = AllocationStatus.WAITING_LOADING
+    await db.commit()
+    broadcast_sse("schedule_updated", {
+        "schedule_id": schedule.id,
+        "allocation_status": schedule.allocation_status,
+        "truck_plate": schedule.truck_plate,
+    })
+    return {"ok": True, "schedule_id": schedule_id, "allocation_status": schedule.allocation_status}
+
+
+# ── POST /api/schedules/sync-allocations — Option B manual trigger ─────────────
+
+@router.post("/sync-allocations")
+async def sync_allocations(db: AsyncSession = Depends(get_db)):
+    """
+    Cross-reference Odoo sale orders (via REST API) against local truck schedules.
+    Any truck whose plate appears in an Odoo SO is automatically marked as allocated.
+    """
+    import asyncio as _aio
+    from app.services.odoo_sync import OdooClient
+
+    client = OdooClient()
+    so_rows = await _aio.to_thread(client.fetch_sale_orders_rest, 90)
+
+    # Build set of truck plates that exist in Odoo SOs
+    odoo_plates = {
+        (r.get("truck_no") or "").replace(" ", "").upper()
+        for r in so_rows
+        if r.get("truck_no")
+    }
+
+    if not odoo_plates:
+        return {"ok": True, "matched": 0, "message": "No truck plates found in Odoo SOs"}
+
+    # Find unallocated schedules whose plate matches
+    result = await db.execute(
+        select(TruckSchedule).where(
+            TruckSchedule.allocation_status == AllocationStatus.UNALLOCATED,
+            TruckSchedule.truck_plate.isnot(None),
+        )
+    )
+    schedules = result.scalars().all()
+
+    matched = 0
+    for s in schedules:
+        plate = (s.truck_plate or "").replace(" ", "").upper()
+        if plate in odoo_plates:
+            s.allocation_status = AllocationStatus.WAITING_LOADING
+            broadcast_sse("schedule_updated", {
+                "schedule_id": s.id,
+                "allocation_status": s.allocation_status,
+                "truck_plate": s.truck_plate,
+            })
+            matched += 1
+
+    if matched:
+        await db.commit()
+
+    return {"ok": True, "matched": matched, "odoo_plates_checked": len(odoo_plates)}
+
+
 # ── GET /api/schedules/order-status ──────────────────────────────────────────
 
 @router.get("/order-status")
