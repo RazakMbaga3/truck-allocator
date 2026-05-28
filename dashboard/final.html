@@ -30,7 +30,7 @@
   <div class="page-header">
     <div>
       <div class="page-title">Final Status</div>
-      <div class="page-subtitle">Allocation outcomes — Dispatched (loaded) and Released (not loaded) trucks</div>
+      <div class="page-subtitle">Allocation outcomes — Pending (in progress), Dispatched (loaded), Released (not loaded)</div>
     </div>
   </div>
 
@@ -41,6 +41,11 @@
       <div class="kpi-value" id="kpi-total">—</div>
       <div class="kpi-sub" id="kpi-period">last 30 days</div>
     </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Pending ⏳</div>
+      <div class="kpi-value" id="kpi-pend">—</div>
+      <div class="kpi-sub">awaiting dispatch from plant</div>
+    </div>
     <div class="kpi-card green">
       <div class="kpi-label">Dispatched ✓</div>
       <div class="kpi-value" id="kpi-disp">—</div>
@@ -49,7 +54,7 @@
     <div class="kpi-card orange">
       <div class="kpi-label">Released ⊘</div>
       <div class="kpi-value" id="kpi-rel">—</div>
-      <div class="kpi-sub">truck not allocated to cement order</div>
+      <div class="kpi-sub">truck left without cement load</div>
     </div>
     <div class="kpi-card">
       <div class="kpi-label">Total Qty (MT)</div>
@@ -70,6 +75,7 @@
           <label>days</label>
           <select id="status-filter" onchange="renderTable()">
             <option value="">All</option>
+            <option value="Pending">Pending</option>
             <option value="Dispatched">Dispatched</option>
             <option value="Released">Released</option>
           </select>
@@ -149,10 +155,12 @@ async function load() {
 }
 
 function renderKPIs() {
+  const pend = _rows.filter(r => r.status === 'Pending').length;
   const disp = _rows.filter(r => r.status === 'Dispatched').length;
   const rel  = _rows.filter(r => r.status === 'Released').length;
   const qty  = _rows.reduce((s, r) => s + (r.qty_mt || 0), 0);
   document.getElementById('kpi-total').textContent = _rows.length;
+  document.getElementById('kpi-pend').textContent  = pend;
   document.getElementById('kpi-disp').textContent  = disp;
   document.getElementById('kpi-rel').textContent   = rel;
   document.getElementById('kpi-qty').textContent   = qty.toFixed(1);
@@ -190,7 +198,9 @@ function rowHtml(r) {
 }
 
 function statusPill(s) {
-  const cls = s === 'Released' ? 'pill-released' : 'pill-dispatched';
+  const cls = s === 'Dispatched' ? 'pill-dispatched'
+            : s === 'Released'   ? 'pill-released'
+            : 'pill-expected';
   return `<span class="pill ${cls}">${s}</span>`;
 }
 

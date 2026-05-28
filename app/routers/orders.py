@@ -241,7 +241,7 @@ async def get_final_status(
     """
     Fetch SOs from Odoo REST API + PO reference from local TruckSchedule.
     Returns: po_ref, so_name, transporter, driver, location, qty,
-             invoice_no, invoice_date, status (Dispatched/Released), remark.
+             invoice_no, invoice_date, status (Pending/Dispatched/Released), remark.
     """
     import asyncio as _aio
     from sqlalchemy import select as sa_select
@@ -277,15 +277,18 @@ async def get_final_status(
         if not driver and not location and not transporter:
             continue
 
-        # delivery_status + invoice_status determine final outcome
+        # Status logic:
+        # Pending   — SO created, truck not yet dispatched from plant
+        # Dispatched — truck left the plant with cement (delivery confirmed)
+        # Released  — truck left without load (delivery cancelled/returned)
         delivery_status = r.get("delivery_status", "")
-        invoice_status  = r.get("invoice_status", "")
-        if delivery_status == "delivered" and invoice_status == "invoiced":
+        so_state        = r.get("state", "")
+        if delivery_status == "delivered":
             status = "Dispatched"
-        elif delivery_status == "delivered":
-            status = "Dispatched"
-        else:
+        elif so_state == "cancel":
             status = "Released"
+        else:
+            status = "Pending"
 
         # qty_mt: UOM varies — "50 KG BAG" needs ÷20, "MT" is already in tonnes
         qty_mt = 0.0
