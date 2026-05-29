@@ -101,9 +101,12 @@ async def get_live_status(days: int = Query(7, ge=1, le=90)):
         if not driver and not transporter and not location:
             continue
 
-        # delivery_status is the authoritative dispatch field
+        # invoice_status → invoiced beats delivery; delivery → dispatched; else pending
         delivery_status = r.get("delivery_status", "")
-        if delivery_status == "delivered":
+        invoice_status  = r.get("invoice_status", "")
+        if invoice_status == "invoiced":
+            status = "Invoiced"
+        elif delivery_status == "delivered":
             status = "Dispatched"
         else:
             status = "Pending"
@@ -310,7 +313,10 @@ async def get_final_status(
             continue
 
         delivery_status = r.get("delivery_status", "")
-        if delivery_status == "delivered":
+        invoice_status  = r.get("invoice_status", "")
+        if invoice_status == "invoiced":
+            status = "Invoiced"
+        elif delivery_status == "delivered":
             status = "Dispatched"
         else:
             status = "Pending"

@@ -49,7 +49,12 @@
     <div class="kpi-card green">
       <div class="kpi-label">Dispatched ✓</div>
       <div class="kpi-value" id="kpi-disp">—</div>
-      <div class="kpi-sub">truck loaded with cement order</div>
+      <div class="kpi-sub">delivered, invoice pending</div>
+    </div>
+    <div class="kpi-card green">
+      <div class="kpi-label">Invoiced ✓✓</div>
+      <div class="kpi-value" id="kpi-inv">—</div>
+      <div class="kpi-sub">delivered and invoiced</div>
     </div>
     <div class="kpi-card orange">
       <div class="kpi-label">Released ⊘</div>
@@ -77,6 +82,7 @@
             <option value="">All</option>
             <option value="Pending">Pending</option>
             <option value="Dispatched">Dispatched</option>
+            <option value="Invoiced">Invoiced</option>
             <option value="Released">Released</option>
           </select>
         </div>
@@ -158,11 +164,13 @@ async function load() {
 function renderKPIs() {
   const pend = _rows.filter(r => r.status === 'Pending').length;
   const disp = _rows.filter(r => r.status === 'Dispatched').length;
+  const inv  = _rows.filter(r => r.status === 'Invoiced').length;
   const rel  = _rows.filter(r => r.status === 'Released').length;
   const qty  = _rows.reduce((s, r) => s + (r.qty_mt || 0), 0);
   document.getElementById('kpi-total').textContent = _rows.length;
   document.getElementById('kpi-pend').textContent  = pend;
   document.getElementById('kpi-disp').textContent  = disp;
+  document.getElementById('kpi-inv').textContent   = inv;
   document.getElementById('kpi-rel').textContent   = rel;
   document.getElementById('kpi-qty').textContent   = qty.toFixed(1);
 }
@@ -200,7 +208,8 @@ function rowHtml(r) {
 }
 
 function statusPill(s) {
-  const cls = s === 'Dispatched' ? 'pill-dispatched'
+  const cls = s === 'Invoiced'   ? 'pill-confirmed'
+            : s === 'Dispatched' ? 'pill-dispatched'
             : s === 'Released'   ? 'pill-released'
             : 'pill-expected';
   return `<span class="pill ${cls}">${s}</span>`;
