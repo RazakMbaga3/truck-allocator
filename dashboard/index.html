@@ -143,11 +143,11 @@
     </div>
   </div>
 
-  <!-- Allocated / dispatched (collapsible) -->
+  <!-- Allocated (collapsible) -->
   <div class="collapsible-card">
     <div class="collapsible-header" id="allocated-header" onclick="toggleAllocated()">
       <span class="collapsible-title">
-        Allocated / Dispatched Trucks
+        Allocated Trucks
         <span class="collapsible-count" id="allocated-count">0</span>
       </span>
       <span class="collapsible-chevron">▾</span>
@@ -177,7 +177,76 @@
       </div>
     </div>
   </div>
+
+  <!-- Released trucks (collapsible) -->
+  <div class="collapsible-card">
+    <div class="collapsible-header" id="released-header" onclick="toggleReleased()">
+      <span class="collapsible-title">
+        Released Trucks
+        <span class="collapsible-count" id="released-count">0</span>
+      </span>
+      <span class="collapsible-chevron">▾</span>
+    </div>
+    <div class="collapsible-body" id="released-body">
+      <div class="data-table-wrapper">
+        <table class="data-table" id="released-table" style="width:100%">
+          <thead>
+            <tr>
+              <th>Material</th>
+              <th>Transporter</th>
+              <th>Driver</th>
+              <th>Truck No.</th>
+              <th>Trailer No.</th>
+              <th>Location</th>
+              <th>Dispatch Date</th>
+              <th>Release Reason</th>
+            </tr>
+          </thead>
+          <tbody id="released-tbody"></tbody>
+        </table>
+      </div>
+      <div id="released-empty" class="empty-state" style="display:none;padding:1rem">
+        <p>No trucks released yet.</p>
+      </div>
+    </div>
+  </div>
 </main>
+
+<!-- Release Dialog -->
+<div class="dialog-overlay" id="release-dialog" style="display:none">
+  <div class="dialog-box">
+    <div class="dialog-header">
+      <div class="dialog-icon danger">⊘</div>
+      <div>
+        <div class="dialog-title">Release Truck</div>
+        <div id="release-dialog-subtitle" style="font-size:0.8rem;color:#6b7280;margin-top:2px"></div>
+      </div>
+    </div>
+    <div class="dialog-body">
+      <p>This truck will be marked as <strong>Released</strong> and will leave the plant without a cement order.</p>
+      <div style="margin-top:1rem">
+        <label style="font-size:0.8rem;font-weight:600;color:#374151;display:block;margin-bottom:0.3rem">Reason</label>
+        <select id="release-reason" style="width:100%;padding:0.5rem;border:1px solid #d1d5db;border-radius:6px;font-size:0.875rem">
+          <option value="No matching cement order">No matching cement order</option>
+          <option value="Timing — truck cannot wait">Timing — truck cannot wait</option>
+          <option value="Route mismatch">Route mismatch</option>
+          <option value="Driver request">Driver request</option>
+          <option value="Material not ready for loading">Material not ready for loading</option>
+          <option value="Other">Other</option>
+        </select>
+      </div>
+      <div style="margin-top:0.75rem">
+        <label style="font-size:0.8rem;font-weight:600;color:#374151;display:block;margin-bottom:0.3rem">Notes (optional)</label>
+        <input type="text" id="release-notes" placeholder="Additional details…"
+               style="width:100%;padding:0.5rem;border:1px solid #d1d5db;border-radius:6px;font-size:0.875rem;box-sizing:border-box">
+      </div>
+    </div>
+    <div class="dialog-footer">
+      <button class="btn btn-outline btn-sm" onclick="cancelRelease()">Cancel</button>
+      <button class="btn btn-danger btn-sm" onclick="confirmRelease()">Confirm Release</button>
+    </div>
+  </div>
+</div>
 
 <div id="toast-container"></div>
 
@@ -196,15 +265,36 @@
 let _allAvailable = [];   // full unfiltered available trucks list
 let _selectedIds  = new Set();
 
-// ── Mark Allocated (Option A) ──────────────────────────────────────────────
-async function markAllocated(scheduleId, label) {
-  if (!confirm(`Mark truck ${label} as Allocated?\n\nThis will move it out of the available list. Only do this after you have completed the Sale Order in Odoo.`)) return;
+// ── Release Dialog ─────────────────────────────────────────────────────────
+let _releaseTarget = null;
+
+function releaseTruck(scheduleId, plate, driver) {
+  _releaseTarget = scheduleId;
+  document.getElementById('release-dialog-subtitle').textContent =
+    `${plate}${driver ? ' · ' + driver : ''}`;
+  document.getElementById('release-reason').value = 'No matching cement order';
+  document.getElementById('release-notes').value = '';
+  document.getElementById('release-dialog').style.display = 'flex';
+}
+
+function cancelRelease() {
+  _releaseTarget = null;
+  document.getElementById('release-dialog').style.display = 'none';
+}
+
+async function confirmRelease() {
+  if (!_releaseTarget) return;
+  const reason = document.getElementById('release-reason').value;
+  const notes  = document.getElementById('release-notes').value;
+  document.getElementById('release-dialog').style.display = 'none';
   try {
-    await API.patch(`/api/schedules/${scheduleId}/mark-allocated`);
-    showToast(`${label} marked as Allocated ✓`, 'green');
+    await API.patch(`/api/schedules/${_releaseTarget}/release`, { reason, notes });
+    showToast('Truck released and recorded ✓', 'green');
     loadSchedules();
   } catch (e) {
     showToast('Error: ' + e.message, 'orange');
+  } finally {
+    _releaseTarget = null;
   }
 }
 
@@ -256,6 +346,11 @@ function toggleAllocated() {
   document.getElementById('allocated-body').classList.toggle('open');
 }
 
+function toggleReleased() {
+  document.getElementById('released-header').classList.toggle('open');
+  document.getElementById('released-body').classList.toggle('open');
+}
+
 // ── KPIs ───────────────────────────────────────────────────────────────────
 async function loadKPIs() {
   try {
@@ -284,11 +379,13 @@ async function loadSchedules() {
       API.allocations('?status=draft'),
     ]);
 
-    _allAvailable = all.filter(s => !['WAITING_LOADING','RELEASED','LOADED'].includes(s.allocation_status));
-    const allocated = all.filter(s =>  ['WAITING_LOADING','RELEASED','LOADED'].includes(s.allocation_status));
+    _allAvailable = all.filter(s => s.allocation_status === 'UNALLOCATED');
+    const allocated = all.filter(s => ['WAITING_LOADING', 'LOADED'].includes(s.allocation_status));
+    const released  = all.filter(s => s.allocation_status === 'RELEASED');
 
     applyFilters();
     renderAllocated(allocated);
+    renderReleased(released);
 
     document.getElementById('last-sync').textContent =
       'Synced ' + new Date().toLocaleTimeString('en-GB', {hour:'2-digit',minute:'2-digit'});
@@ -382,7 +479,7 @@ function truckRow(s, showCheckbox) {
       <td class="text-muted">${fmtDate(s.upload_date)}</td>
       <td style="display:flex;gap:0.35rem;align-items:center;flex-wrap:wrap">
         <button class="btn btn-orange btn-sm" onclick="allocateViaOdoo(${s.id})">Allocate →</button>
-        <button class="btn btn-green btn-sm" title="Mark this truck as allocated after completing SO in Odoo" onclick="markAllocated(${s.id}, '${(s.truck_plate||s.schedule_ref).replace(/'/g,"\\'")}')">✓ Allocated</button>
+        <button class="btn btn-danger btn-sm" title="Mark truck as released — leaving empty without cement order" onclick="releaseTruck(${s.id}, '${(s.truck_plate||s.schedule_ref).replace(/'/g,"\\'")}', '${(s.driver_name||'').replace(/'/g,"\\'")}')">Release</button>
         <button class="btn btn-outline btn-sm" title="Delete this truck" onclick="deleteRow(${s.id},'${(s.truck_plate||s.schedule_ref).replace(/'/g,"\\'")}')">🗑</button>
       </td>
     </tr>`;
@@ -425,6 +522,28 @@ function renderMain(schedules) {
 function renderAllocated(schedules) {
   document.getElementById('allocated-count').textContent = schedules.length;
   document.getElementById('allocated-tbody').innerHTML = schedules.map(s => truckRow(s, false)).join('');
+}
+
+function renderReleased(schedules) {
+  document.getElementById('released-count').textContent = schedules.length;
+  const na = '<span class="na">—</span>';
+  if (!schedules.length) {
+    document.getElementById('released-tbody').innerHTML = '';
+    document.getElementById('released-empty').style.display = 'block';
+    return;
+  }
+  document.getElementById('released-empty').style.display = 'none';
+  document.getElementById('released-tbody').innerHTML = schedules.map(s => `
+    <tr>
+      <td>${materialTag(s.raw_material_type)}</td>
+      <td>${s.transporter_name || na}</td>
+      <td>${s.driver_name || na}</td>
+      <td><span class="mono">${s.truck_plate || na}</span></td>
+      <td><span class="mono">${s.dealer_number || na}</span></td>
+      <td><strong>${s.origin_region || '—'}</strong></td>
+      <td>${fmtDate(s.dispatch_date || s.dispatched_at)}</td>
+      <td class="text-muted" style="max-width:200px">${s.notes || na}</td>
+    </tr>`).join('');
 }
 
 function fmtAllocStatus(s) {

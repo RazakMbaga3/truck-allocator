@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 from io import BytesIO
 from typing import AsyncGenerator
 
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, File
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -514,6 +514,39 @@ async def mark_allocated(schedule_id: int, db: AsyncSession = Depends(get_db)):
         "truck_plate": schedule.truck_plate,
     })
     return {"ok": True, "schedule_id": schedule_id, "allocation_status": schedule.allocation_status}
+
+
+# ── PATCH /api/schedules/{id}/release ────────────────────────────────────────
+
+@router.patch("/{schedule_id}/release")
+async def release_truck(schedule_id: int, request: Request, db: AsyncSession = Depends(get_db)):
+    """
+    Dispatcher releases a truck — it will leave empty without a cement order.
+    Records the reason and timestamp. Truck moves to Released section.
+    """
+    body = await request.json()
+    reason = str(body.get("reason") or "").strip()
+    notes  = str(body.get("notes")  or "").strip()
+    full_note = f"{reason} — {notes}" if notes else reason
+
+    schedule = await _get_or_404(schedule_id, db)
+    schedule.allocation_status = AllocationStatus.RELEASED
+    schedule.dispatched_at     = datetime.now(timezone.utc)
+    if full_note:
+        schedule.notes = full_note
+    await db.commit()
+
+    broadcast_sse("schedule_updated", {
+        "schedule_id":       schedule.id,
+        "allocation_status": schedule.allocation_status,
+        "truck_plate":       schedule.truck_plate,
+    })
+    return {
+        "ok":               True,
+        "schedule_id":      schedule_id,
+        "allocation_status": schedule.allocation_status,
+        "reason":           full_note,
+    }
 
 
 # ── POST /api/schedules/sync-allocations — Option B manual trigger ─────────────

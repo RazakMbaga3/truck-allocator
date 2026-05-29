@@ -92,6 +92,7 @@
             <tr>
               <th>PO Ref</th>
               <th>SO No.</th>
+              <th>Truck No.</th>
               <th>Transporter</th>
               <th>Driver</th>
               <th>Location</th>
@@ -186,6 +187,7 @@ function rowHtml(r) {
   return `<tr>
     <td><span class="mono">${r.po_ref || na}</span></td>
     <td><span class="mono">${r.so_name || na}</span></td>
+    <td><span class="mono">${r.truck_plate || na}</span></td>
     <td>${r.transporter || na}</td>
     <td>${r.driver || na}</td>
     <td>${r.location || na}</td>
@@ -193,7 +195,7 @@ function rowHtml(r) {
     <td><span class="mono">${r.invoice_no || na}</span></td>
     <td>${r.invoice_date ? fmtDate(r.invoice_date) : na}</td>
     <td>${statusPill(r.status)}</td>
-    <td class="truncate text-muted" style="max-width:200px" title="${r.remark || ''}">${r.remark || na}</td>
+    <td class="truncate text-muted" style="max-width:180px" title="${r.remark || ''}">${r.remark || na}</td>
   </tr>`;
 }
 

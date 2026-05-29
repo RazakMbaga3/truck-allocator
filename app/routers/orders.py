@@ -277,10 +277,9 @@ async def get_final_status(
         if not driver and not location and not transporter:
             continue
 
-        # Status logic:
-        # Pending   — SO created, truck not yet dispatched from plant
-        # Dispatched — truck left the plant with cement (delivery confirmed)
-        # Released  — truck left without load (delivery cancelled/returned)
+        # Pending   — SO created, truck not yet dispatched
+        # Dispatched — delivery confirmed in Odoo
+        # Released  — SO cancelled in Odoo
         delivery_status = r.get("delivery_status", "")
         so_state        = r.get("state", "")
         if delivery_status == "delivered":
@@ -290,19 +289,17 @@ async def get_final_status(
         else:
             status = "Pending"
 
-        # qty_mt: UOM varies — "50 KG BAG" needs ÷20, "MT" is already in tonnes
         qty_mt = 0.0
         for line in (r.get("order_lines") or []):
             qty = float(line.get("product_uom_qty", 0))
-            if line.get("uom") == "MT":
-                qty_mt += qty
-            else:
-                qty_mt += qty / 20.0
+            qty_mt += qty if line.get("uom") == "MT" else qty / 20.0
 
         truck_no = r.get("truck_no") or ""
         output.append({
+            "source":       "odoo",
             "po_ref":       po_by_plate.get(truck_no),
             "so_name":      r.get("name"),
+            "truck_plate":  truck_no or None,
             "transporter":  transporter,
             "driver":       driver,
             "license":      r.get("driver_license") or None,
@@ -314,6 +311,38 @@ async def get_final_status(
             "remark":       r.get("note") or "",
             "date_order":   r.get("date_order"),
         })
+
+    # Merge local Released trucks (released via dashboard — no Odoo SO exists)
+    from datetime import timedelta
+    cutoff_dt = datetime.now(timezone.utc) - timedelta(days=days)
+    from app.models import TruckSchedule
+    from app.models.truck_schedule import AllocationStatus as AS
+    released_res = await db.execute(
+        sa_select(TruckSchedule).where(
+            TruckSchedule.allocation_status == AS.RELEASED,
+            TruckSchedule.dispatched_at >= cutoff_dt,
+        ).order_by(TruckSchedule.dispatched_at.desc())
+    )
+    for s in released_res.scalars().all():
+        output.append({
+            "source":       "local",
+            "po_ref":       s.odoo_po_name,
+            "so_name":      None,
+            "truck_plate":  s.truck_plate,
+            "transporter":  s.transporter_name,
+            "driver":       s.driver_name,
+            "license":      s.driver_license_no,
+            "location":     s.origin_region,
+            "qty_mt":       0.0,
+            "invoice_no":   None,
+            "invoice_date": None,
+            "status":       "Released",
+            "remark":       s.notes or "",
+            "date_order":   s.dispatched_at.isoformat() if s.dispatched_at else None,
+        })
+
+    # Sort all records newest first
+    output.sort(key=lambda x: x.get("date_order") or "", reverse=True)
     return output
 
 
