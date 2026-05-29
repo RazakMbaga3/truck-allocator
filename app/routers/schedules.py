@@ -204,29 +204,44 @@ _HEADER_MAP = {
     "po number": "odoo_po_name",
     # material
     "material": "raw_material_type", "raw material": "raw_material_type",
-    "material type": "raw_material_type",
+    "material type": "raw_material_type", "product type": "raw_material_type",
+    "aina ya bidhaa": "raw_material_type",
     # transporter
     "transporter": "transporter_name", "transporter name": "transporter_name",
     # driver
     "driver": "driver_name", "driver name": "driver_name",
+    "jina la dereva": "driver_name", "jina la dereva (kama leseni)": "driver_name",
     # phone
     "phone": "driver_phone", "mobile": "driver_phone", "driver phone": "driver_phone",
-    "driver mobile": "driver_phone",
+    "driver mobile": "driver_phone", "phone number": "driver_phone",
+    "contact": "driver_phone", "namba ya simu": "driver_phone",
     # licence
     "licence": "driver_license_no", "license": "driver_license_no",
     "driver licence": "driver_license_no", "driver license": "driver_license_no",
     "licence no": "driver_license_no", "license no": "driver_license_no",
+    "driving licence": "driver_license_no", "driving license": "driver_license_no",
+    "namba ya leseni": "driver_license_no", "licence no.": "driver_license_no",
+    "license no.": "driver_license_no",
     # truck plate
     "truck no": "truck_plate", "truck no.": "truck_plate", "vehicle": "truck_plate",
-    "plate": "truck_plate", "truck plate": "truck_plate",
+    "plate": "truck_plate", "truck plate": "truck_plate", "truck number": "truck_plate",
+    "namba za gari": "truck_plate",
+    # trailer
+    "trailer": "dealer_number", "trailer no": "dealer_number",
+    "trailer no.": "dealer_number", "trailer number": "dealer_number",
+    "namba za tela": "dealer_number",
     # origin/location
     "location": "origin_region", "origin": "origin_region", "origin region": "origin_region",
+    "preferred location": "origin_region",
     # dispatch date
     "date of dispatch": "dispatch_date", "dispatch date": "dispatch_date",
-    "dispatched": "dispatch_date",
+    "dispatched": "dispatch_date", "date": "dispatch_date",
     # quantity
     "qty (mt)": "estimated_qty_tonnes", "qty mt": "estimated_qty_tonnes",
     "quantity": "estimated_qty_tonnes", "qty": "estimated_qty_tonnes",
+    "tons": "estimated_qty_tonnes", "tonnes": "estimated_qty_tonnes",
+    "loading tons": "estimated_qty_tonnes", "tonne": "estimated_qty_tonnes",
+    "tani za kubeba": "estimated_qty_tonnes",
 }
 
 
@@ -266,7 +281,17 @@ async def import_schedules_excel(
         raise HTTPException(status_code=400, detail="Excel file is empty")
 
     # Build column index map from header row
-    header_row = [str(c).strip().lower() if c is not None else "" for c in rows[0]]
+    # Strip trailing /  .  '  and bracketed content e.g. "(Loading Tons) /"
+    import re as _re
+    def _clean_header(raw) -> str:
+        if raw is None:
+            return ""
+        s = str(raw).strip().lower()
+        s = _re.sub(r"[\s/.'\"()\-]+$", "", s)   # strip trailing punctuation
+        s = _re.sub(r"^\s*\(.*?\)\s*", "", s)     # strip leading (...)
+        return s.strip()
+
+    header_row = [_clean_header(c) for c in rows[0]]
     col_map: dict[str, int] = {}
     for idx, h in enumerate(header_row):
         field = _HEADER_MAP.get(h)
@@ -328,13 +353,18 @@ async def import_schedules_excel(
         except (ValueError, TypeError):
             qty = 30.0
 
+        def _str(field: str) -> str | None:
+            v = cell(field)
+            return str(v).strip() if v is not None else None
+
         schedule = TruckSchedule(
             schedule_ref=f"IMP-{uuid.uuid4().hex[:10].upper()}",
-            odoo_po_name=str(cell("odoo_po_name")).strip() if cell("odoo_po_name") else None,
-            transporter_name=str(cell("transporter_name")).strip() if cell("transporter_name") else None,
-            driver_name=str(cell("driver_name")).strip() if cell("driver_name") else None,
-            driver_phone=str(cell("driver_phone")).strip() if cell("driver_phone") else None,
-            driver_license_no=str(cell("driver_license_no")).strip() if cell("driver_license_no") else None,
+            odoo_po_name=_str("odoo_po_name"),
+            transporter_name=_str("transporter_name"),
+            driver_name=_str("driver_name"),
+            driver_phone=_str("driver_phone"),
+            driver_license_no=_str("driver_license_no"),
+            dealer_number=_str("dealer_number"),
             truck_plate=truck_plate,
             origin_region=origin_region,
             raw_material_type=raw_material,

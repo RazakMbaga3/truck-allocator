@@ -125,6 +125,7 @@
               <th>Phone</th>
               <th>Licence</th>
               <th>Truck No.</th>
+              <th>Trailer No.</th>
               <th>Location</th>
               <th>Dispatch Date</th>
               <th>Upload Date</th>
@@ -163,6 +164,7 @@
               <th>Phone</th>
               <th>Licence</th>
               <th>Truck No.</th>
+              <th>Trailer No.</th>
               <th>Location</th>
               <th>Dispatch Date</th>
               <th>Upload Date</th>
@@ -360,6 +362,7 @@ function truckRow(s, showCheckbox) {
   const driver      = s.driver_name || na;
   const license     = s.driver_license_no ? `<span class="mono">${s.driver_license_no}</span>` : na;
   const plate       = s.truck_plate ? `<span class="mono">${s.truck_plate}</span>` : na;
+  const trailer     = s.dealer_number ? `<span class="mono">${s.dealer_number}</span>` : na;
   const phone       = s.driver_phone || na;
 
   if (showCheckbox) {
@@ -373,6 +376,7 @@ function truckRow(s, showCheckbox) {
       <td class="text-muted">${phone}</td>
       <td>${license}</td>
       <td>${plate}</td>
+      <td>${trailer}</td>
       <td><strong>${s.origin_region || '—'}</strong></td>
       <td>${fmtDate(s.dispatch_date)}</td>
       <td class="text-muted">${fmtDate(s.upload_date)}</td>
@@ -383,7 +387,6 @@ function truckRow(s, showCheckbox) {
       </td>
     </tr>`;
   } else {
-    // Allocated section row — no checkbox, delete still available
     const allocStatus = fmtAllocStatus(s.allocation_status);
     return `<tr id="sched-row-${s.id}">
       <td>${poRef}</td>
@@ -393,6 +396,7 @@ function truckRow(s, showCheckbox) {
       <td class="text-muted">${phone}</td>
       <td>${license}</td>
       <td>${plate}</td>
+      <td>${trailer}</td>
       <td><strong>${s.origin_region || '—'}</strong></td>
       <td>${fmtDate(s.dispatch_date)}</td>
       <td class="text-muted">${fmtDate(s.upload_date)}</td>
