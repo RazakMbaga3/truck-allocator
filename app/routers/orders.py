@@ -239,22 +239,56 @@ async def get_final_status(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Fetch SOs from Odoo REST API + PO reference from local TruckSchedule.
-    Returns: po_ref, so_name, transporter, driver, location, qty,
-             invoice_no, invoice_date, status (Pending/Dispatched/Released), remark.
+    Merge two sources:
+      1. Odoo REST API  → Pending / Dispatched / (cancelled) records
+      2. Local DB       → Released trucks (released via dashboard, no SO created)
+    Status: Pending | Dispatched | Released
+    Invoiced SOs: invoice_no and invoice_date fetched via XML-RPC.
     """
     import asyncio as _aio
+    from datetime import datetime, timedelta, timezone
     from sqlalchemy import select as sa_select
     from app.models import TruckSchedule
+    from app.models.truck_schedule import AllocationStatus as AS
     from app.services.odoo_sync import OdooClient
+    from app.config import get_settings
 
+    s = get_settings()
     client = OdooClient()
-    so_rows = await _aio.to_thread(client.fetch_sale_orders_rest, days)
 
-    # Filter out cancelled and draft — exclude orders with no operational data
+    # ── 1. Fetch SOs from Odoo REST API ──────────────────────────────────────
+    so_rows = await _aio.to_thread(client.fetch_sale_orders_rest, days)
     so_rows = [r for r in so_rows if r.get("state") not in ("cancel", "draft")]
 
-    # Look up PO references from local DB by truck plate
+    # ── 2. Fetch invoice details via XML-RPC for invoiced SOs ────────────────
+    invoiced_so_names = [
+        r["name"] for r in so_rows
+        if r.get("invoice_status") == "invoiced" and r.get("invoice_count", 0) > 0
+    ]
+    inv_by_so: dict[str, dict] = {}
+    if invoiced_so_names:
+        try:
+            uid = await _aio.to_thread(client._uid_or_auth)
+            models = client._models()
+            inv_rows = await _aio.to_thread(
+                models.execute_kw,
+                s.odoo_db, uid, s.odoo_password,
+                "account.move", "search_read",
+                [[
+                    ["invoice_origin", "in", invoiced_so_names],
+                    ["move_type", "=", "out_invoice"],
+                    ["state", "=", "posted"],
+                ]],
+                {"fields": ["name", "invoice_date", "invoice_origin"], "limit": 500},
+            )
+            for inv in inv_rows:
+                origin = inv.get("invoice_origin") or ""
+                if origin not in inv_by_so:
+                    inv_by_so[origin] = inv
+        except Exception:
+            pass  # invoice lookup is non-critical — show without if unavailable
+
+    # ── 3. Look up PO refs from local DB by truck plate ───────────────────────
     plates = [r["truck_no"] for r in so_rows if r.get("truck_no")]
     po_by_plate: dict[str, str] = {}
     if plates:
@@ -266,26 +300,18 @@ async def get_final_status(
         )
         po_by_plate = {row.truck_plate: row.odoo_po_name for row in res}
 
-    STATE_MAP = {"done": "Dispatched", "sale": "Pending", "sent": "Pending"}
-
+    # ── 4. Build Odoo SO output rows ──────────────────────────────────────────
     output = []
     for r in so_rows:
         driver      = r.get("driver_name") or None
         location    = r.get("destination_location") or None
         transporter = r.get("transporter_name") or None
-
         if not driver and not location and not transporter:
             continue
 
-        # Pending   — SO created, truck not yet dispatched
-        # Dispatched — delivery confirmed in Odoo
-        # Released  — SO cancelled in Odoo
         delivery_status = r.get("delivery_status", "")
-        so_state        = r.get("state", "")
         if delivery_status == "delivered":
             status = "Dispatched"
-        elif so_state == "cancel":
-            status = "Released"
         else:
             status = "Pending"
 
@@ -294,54 +320,53 @@ async def get_final_status(
             qty = float(line.get("product_uom_qty", 0))
             qty_mt += qty if line.get("uom") == "MT" else qty / 20.0
 
+        so_name  = r.get("name") or ""
         truck_no = r.get("truck_no") or ""
+        inv      = inv_by_so.get(so_name)
+
         output.append({
             "source":       "odoo",
             "po_ref":       po_by_plate.get(truck_no),
-            "so_name":      r.get("name"),
+            "so_name":      so_name or None,
             "truck_plate":  truck_no or None,
             "transporter":  transporter,
             "driver":       driver,
             "license":      r.get("driver_license") or None,
             "location":     location,
             "qty_mt":       qty_mt,
-            "invoice_no":   r.get("invoice_no") or None,
-            "invoice_date": r.get("invoice_date") or None,
+            "invoice_no":   inv["name"] if inv else None,
+            "invoice_date": inv["invoice_date"] if inv else None,
             "status":       status,
             "remark":       r.get("note") or "",
             "date_order":   r.get("date_order"),
         })
 
-    # Merge local Released trucks (released via dashboard — no Odoo SO exists)
-    from datetime import timedelta
+    # ── 5. Merge local Released trucks ────────────────────────────────────────
     cutoff_dt = datetime.now(timezone.utc) - timedelta(days=days)
-    from app.models import TruckSchedule
-    from app.models.truck_schedule import AllocationStatus as AS
     released_res = await db.execute(
         sa_select(TruckSchedule).where(
             TruckSchedule.allocation_status == AS.RELEASED,
             TruckSchedule.dispatched_at >= cutoff_dt,
         ).order_by(TruckSchedule.dispatched_at.desc())
     )
-    for s in released_res.scalars().all():
+    for ts in released_res.scalars().all():
         output.append({
             "source":       "local",
-            "po_ref":       s.odoo_po_name,
+            "po_ref":       ts.odoo_po_name,
             "so_name":      None,
-            "truck_plate":  s.truck_plate,
-            "transporter":  s.transporter_name,
-            "driver":       s.driver_name,
-            "license":      s.driver_license_no,
-            "location":     s.origin_region,
+            "truck_plate":  ts.truck_plate,
+            "transporter":  ts.transporter_name,
+            "driver":       ts.driver_name,
+            "license":      ts.driver_license_no,
+            "location":     ts.origin_region,
             "qty_mt":       0.0,
             "invoice_no":   None,
             "invoice_date": None,
             "status":       "Released",
-            "remark":       s.notes or "",
-            "date_order":   s.dispatched_at.isoformat() if s.dispatched_at else None,
+            "remark":       ts.notes or "",
+            "date_order":   ts.dispatched_at.isoformat() if ts.dispatched_at else None,
         })
 
-    # Sort all records newest first
     output.sort(key=lambda x: x.get("date_order") or "", reverse=True)
     return output
 
