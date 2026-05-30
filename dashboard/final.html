@@ -234,15 +234,27 @@ function rowHtml(r, idx) {
 
   if (!isReleased) return mainRow;
 
-  const expandRow = `<tr id="final-expand-${idx}" style="display:none;background:#f8fafc">
-    <td colspan="11" style="padding:0.75rem 1.25rem">
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:0.6rem 1.5rem;font-size:0.82rem">
-        <div><span style="color:#6b7280;font-weight:600;display:block;margin-bottom:2px">RELEASE REASON</span><span style="color:#dc2626;font-weight:500">${r.remark || '—'}</span></div>
-        <div><span style="color:#6b7280;font-weight:600;display:block;margin-bottom:2px">RELEASED AT</span>${r.date_order ? new Date(r.date_order).toLocaleString('en-GB',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}) : '—'}</div>
-        <div><span style="color:#6b7280;font-weight:600;display:block;margin-bottom:2px">TRUCK NO.</span><span class="mono">${r.truck_plate || '—'}</span></div>
-        <div><span style="color:#6b7280;font-weight:600;display:block;margin-bottom:2px">TRANSPORTER</span>${r.transporter || '—'}</div>
-        <div><span style="color:#6b7280;font-weight:600;display:block;margin-bottom:2px">DRIVER</span>${r.driver || '—'}</div>
-        <div><span style="color:#6b7280;font-weight:600;display:block;margin-bottom:2px">LICENCE</span><span class="mono">${r.license || '—'}</span></div>
+  const relAt = r.date_order
+    ? new Date(r.date_order).toLocaleString('en-GB',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})
+    : '—';
+  const expandRow = `<tr id="final-expand-${idx}" style="display:none;background:#f8fafc;border-left:3px solid #dc2626">
+    <td colspan="11" style="padding:1rem 1.5rem">
+      <div style="background:#fff1f2;border:1px solid #fecaca;border-radius:8px;padding:0.75rem 1rem;margin-bottom:0.75rem">
+        <span style="font-size:0.7rem;font-weight:700;color:#991b1b;letter-spacing:0.05em;display:block;margin-bottom:3px">RELEASE REASON</span>
+        <span style="color:#dc2626;font-weight:600;font-size:0.9rem;word-break:break-word">${r.remark || '—'}</span>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:1rem">
+        ${[
+          ['Released At',  relAt],
+          ['Truck No.',    r.truck_plate || '—'],
+          ['Transporter',  r.transporter || '—'],
+          ['Driver',       r.driver || '—'],
+          ['Licence',      r.license || '—'],
+        ].map(([label, val]) => `
+          <div style="min-width:140px;flex:1">
+            <div style="font-size:0.68rem;font-weight:700;color:#9ca3af;letter-spacing:0.05em;margin-bottom:2px">${label.toUpperCase()}</div>
+            <div style="font-size:0.85rem;color:#111827;word-break:break-word">${val}</div>
+          </div>`).join('')}
       </div>
     </td>
   </tr>`;
