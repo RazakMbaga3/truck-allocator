@@ -136,6 +136,23 @@
 <script src="/static/js/api.js"></script>
 <script>
 let _rows = [];
+let _expandOpen = new Set();
+
+function toggleFinalRow(idx) {
+  const expand = document.getElementById(`final-expand-${idx}`);
+  const chev   = document.getElementById(`final-chev-${idx}`);
+  if (!expand) return;
+  const open = _expandOpen.has(idx);
+  if (open) {
+    _expandOpen.delete(idx);
+    expand.style.display = 'none';
+    if (chev) chev.textContent = '▶';
+  } else {
+    _expandOpen.add(idx);
+    expand.style.display = 'table-row';
+    if (chev) chev.textContent = '▼';
+  }
+}
 
 document.addEventListener('DOMContentLoaded', () => {
   load();
@@ -187,12 +204,21 @@ function renderTable() {
   }
   document.getElementById('main-table').style.display = 'table';
   document.getElementById('main-empty').style.display = 'none';
-  document.getElementById('main-tbody').innerHTML = visible.map(rowHtml).join('');
+  _expandOpen.clear();
+  document.getElementById('main-tbody').innerHTML = visible.map((r, i) => rowHtml(r, i)).join('');
 }
 
-function rowHtml(r) {
-  const na = '<span class="na">—</span>';
-  return `<tr>
+function rowHtml(r, idx) {
+  const na        = '<span class="na">—</span>';
+  const isReleased = r.status === 'Released';
+  const clickAttr  = isReleased
+    ? `onclick="toggleFinalRow(${idx})" style="cursor:pointer" title="Click to see release details"`
+    : '';
+  const chev = isReleased
+    ? `<span id="final-chev-${idx}" style="font-size:0.7rem;margin-right:4px;color:#9ca3af">▶</span>`
+    : '';
+
+  const mainRow = `<tr ${clickAttr}>
     <td><span class="mono">${r.po_ref || na}</span></td>
     <td><span class="mono">${r.so_name || na}</span></td>
     <td><span class="mono">${r.truck_plate || na}</span></td>
@@ -202,9 +228,26 @@ function rowHtml(r) {
     <td style="text-align:right"><strong>${r.qty_mt ? r.qty_mt.toFixed(1) : na}</strong></td>
     <td><span class="mono">${r.invoice_no || na}</span></td>
     <td>${r.invoice_date ? fmtDate(r.invoice_date) : na}</td>
-    <td>${statusPill(r.status)}</td>
-    <td class="truncate text-muted" style="max-width:180px" title="${r.remark || ''}">${r.remark || na}</td>
+    <td>${chev}${statusPill(r.status)}</td>
+    <td class="truncate text-muted" style="max-width:160px" title="${r.remark || ''}">${r.remark || na}</td>
   </tr>`;
+
+  if (!isReleased) return mainRow;
+
+  const expandRow = `<tr id="final-expand-${idx}" style="display:none;background:#f8fafc">
+    <td colspan="11" style="padding:0.75rem 1.25rem">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:0.6rem 1.5rem;font-size:0.82rem">
+        <div><span style="color:#6b7280;font-weight:600;display:block;margin-bottom:2px">RELEASE REASON</span><span style="color:#dc2626;font-weight:500">${r.remark || '—'}</span></div>
+        <div><span style="color:#6b7280;font-weight:600;display:block;margin-bottom:2px">RELEASED AT</span>${r.date_order ? new Date(r.date_order).toLocaleString('en-GB',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}) : '—'}</div>
+        <div><span style="color:#6b7280;font-weight:600;display:block;margin-bottom:2px">TRUCK NO.</span><span class="mono">${r.truck_plate || '—'}</span></div>
+        <div><span style="color:#6b7280;font-weight:600;display:block;margin-bottom:2px">TRANSPORTER</span>${r.transporter || '—'}</div>
+        <div><span style="color:#6b7280;font-weight:600;display:block;margin-bottom:2px">DRIVER</span>${r.driver || '—'}</div>
+        <div><span style="color:#6b7280;font-weight:600;display:block;margin-bottom:2px">LICENCE</span><span class="mono">${r.license || '—'}</span></div>
+      </div>
+    </td>
+  </tr>`;
+
+  return mainRow + expandRow;
 }
 
 function statusPill(s) {

@@ -533,17 +533,50 @@ function renderReleased(schedules) {
     return;
   }
   document.getElementById('released-empty').style.display = 'none';
-  document.getElementById('released-tbody').innerHTML = schedules.map(s => `
-    <tr>
-      <td>${materialTag(s.raw_material_type)}</td>
+  document.getElementById('released-tbody').innerHTML = schedules.map(s => {
+    const reason   = s.notes || '—';
+    const capacity = s.actual_capacity_tonnes || s.estimated_qty_tonnes || '—';
+    const corridor = s.corridor_name || s.origin_region || '—';
+    const releasedAt = s.dispatched_at
+      ? new Date(s.dispatched_at).toLocaleString('en-GB', {day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})
+      : fmtDate(s.dispatch_date);
+    return `
+    <tr class="released-row" onclick="toggleReleasedRow(${s.id})" style="cursor:pointer" title="Click to expand">
+      <td><span style="font-size:0.7rem;margin-right:4px;color:#9ca3af" id="chev-${s.id}">▶</span>${materialTag(s.raw_material_type)}</td>
       <td>${s.transporter_name || na}</td>
       <td>${s.driver_name || na}</td>
       <td><span class="mono">${s.truck_plate || na}</span></td>
       <td><span class="mono">${s.dealer_number || na}</span></td>
       <td><strong>${s.origin_region || '—'}</strong></td>
       <td>${fmtDate(s.dispatch_date || s.dispatched_at)}</td>
-      <td class="text-muted" style="max-width:200px">${s.notes || na}</td>
-    </tr>`).join('');
+      <td class="text-muted" style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${reason}">${reason}</td>
+    </tr>
+    <tr id="released-expand-${s.id}" style="display:none;background:#f8fafc">
+      <td colspan="8" style="padding:0.75rem 1.25rem">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:0.6rem 1.5rem;font-size:0.82rem">
+          <div><span style="color:#6b7280;font-weight:600;display:block;margin-bottom:2px">RELEASE REASON</span><span style="color:#dc2626;font-weight:500">${reason}</span></div>
+          <div><span style="color:#6b7280;font-weight:600;display:block;margin-bottom:2px">RELEASED AT</span>${releasedAt}</div>
+          <div><span style="color:#6b7280;font-weight:600;display:block;margin-bottom:2px">TRUCK NO.</span><span class="mono">${s.truck_plate || '—'}</span></div>
+          <div><span style="color:#6b7280;font-weight:600;display:block;margin-bottom:2px">TRAILER NO.</span><span class="mono">${s.dealer_number || '—'}</span></div>
+          <div><span style="color:#6b7280;font-weight:600;display:block;margin-bottom:2px">DRIVER</span>${s.driver_name || '—'}</div>
+          <div><span style="color:#6b7280;font-weight:600;display:block;margin-bottom:2px">LICENCE</span><span class="mono">${s.driver_license_no || '—'}</span></div>
+          <div><span style="color:#6b7280;font-weight:600;display:block;margin-bottom:2px">PHONE</span>${s.driver_phone || '—'}</div>
+          <div><span style="color:#6b7280;font-weight:600;display:block;margin-bottom:2px">CORRIDOR</span>${corridor}</div>
+          <div><span style="color:#6b7280;font-weight:600;display:block;margin-bottom:2px">CAPACITY</span>${capacity} MT</div>
+          <div><span style="color:#6b7280;font-weight:600;display:block;margin-bottom:2px">MATERIAL</span>${s.raw_material_type || '—'}</div>
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function toggleReleasedRow(id) {
+  const expand = document.getElementById(`released-expand-${id}`);
+  const chev   = document.getElementById(`chev-${id}`);
+  if (!expand) return;
+  const open = expand.style.display !== 'none';
+  expand.style.display = open ? 'none' : 'table-row';
+  if (chev) chev.textContent = open ? '▶' : '▼';
 }
 
 function fmtAllocStatus(s) {
